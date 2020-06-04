@@ -1,3 +1,5 @@
+pub mod bool;
+
 #[cfg(test)]
 mod tests {
     #[test]
