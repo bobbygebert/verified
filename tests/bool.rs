@@ -23,18 +23,20 @@ impl Compile {
         std::io::Write::write_all(
             &mut err_file,
             textwrap::dedent(&expected_error[1..]).as_bytes(),
-        );
+        )
+        .unwrap();
         trybuild::TestCases::new().compile_fail(code_filename);
     }
 }
 
 #[test]
 #[allow(non_snake_case)]
-fn Bool_may_not_be_implemented() {
+fn compilation_tests() {
     Compile(
-        "example.rs",
+        "Bool_may_not_be_implemented.rs",
         "
         use verified::bool::Bool;
+        #[derive(Default)]
         struct Foo;
         impl Bool for Foo {}
         ",
@@ -42,10 +44,29 @@ fn Bool_may_not_be_implemented() {
     .and_expect(
         "
         error[E0277]: the trait bound `main::Foo: verified::bool::internal::Choice<verified::bool::False, verified::bool::True>` is not satisfied
-         --> $DIR/example.rs:4:10
+         --> $DIR/Bool_may_not_be_implemented.rs:5:10
           |
-        4 |     impl Bool for Foo {}
+        5 |     impl Bool for Foo {}
           |          ^^^^ the trait `verified::bool::internal::Choice<verified::bool::False, verified::bool::True>` is not implemented for `main::Foo`
+        "
+    );
+
+    Compile(
+        "False_and_True_are_incompatible.rs",
+        "
+        use verified::bool::*;
+        let _: True = False;
+        ",
+    )
+    .and_expect(
+        "
+        error[E0308]: mismatched types
+         --> $DIR/False_and_True_are_incompatible.rs:3:19
+          |
+        3 |     let _: True = False;
+          |            ----   ^^^^^ expected struct `verified::bool::True`, found struct `verified::bool::False`
+          |            |
+          |            expected due to this
         "
     );
 }
