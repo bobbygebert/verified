@@ -1,6 +1,7 @@
 extern crate proc_macro;
-use proc_macro::{TokenStream, TokenTree};
+use proc_macro::TokenStream;
 use quote::ToTokens;
+use syn::spanned::Spanned;
 
 #[proc_macro_attribute]
 pub fn verify(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -11,44 +12,77 @@ pub fn verify(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
-    let mut tokens = item.into_iter();
+    let verified_fn: VerifiedFn = syn::parse(item.clone())?;
+    Ok(verified_fn.item.into_token_stream().into())
+}
 
-    let mut function_tokens = tokens
-        .by_ref()
-        .take_while(|tt| match tt {
-            proc_macro::TokenTree::Ident(ident) if ident.to_string() == "_" => false,
-            _ => true,
-        })
-        .collect::<Vec<_>>();
+#[derive(Debug)]
+struct VerifiedFn {
+    item: syn::ItemFn,
+}
 
-    // Verify<
-    let _verify_ident = tokens.next();
-    let _colon = tokens.next();
-    let _left_angle = tokens.next();
+impl syn::parse::Parse for VerifiedFn {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        let mut item: syn::ItemFn = input.parse()?;
+        let where_clause = item.sig.generics.make_where_clause();
+        let (mut predicates, inferred_bounds): (Vec<_>, Vec<_>) = where_clause
+            .clone()
+            .predicates
+            .into_iter()
+            .partition(|clause| match clause {
+                syn::WherePredicate::Type(syn::PredicateType {
+                    bounded_ty: syn::Type::Infer(_),
+                    ..
+                }) => false,
+                _ => true,
+            });
 
-    // {},..
-    let logic: Logic = syn::parse(std::iter::FromIterator::from_iter(
-        tokens.by_ref().take_while(|t| match t {
-            // >
-            TokenTree::Punct(p) if p.to_string() == ">" => false,
-            _ => true,
-        }),
-    ))?;
+        if inferred_bounds.len() > 1 {
+            return Err(syn::Error::new(
+                inferred_bounds[1].span(),
+                "did not expect to find second `Verify` bound",
+            ));
+        }
 
-    // ,{}
-    let block = match tokens.next() {
-        Some(TokenTree::Punct(p)) if p.to_string() == "," => tokens.next().into_iter(),
-        t => t.into_iter(),
-    };
+        let bounds = if let Some(syn::WherePredicate::Type(syn::PredicateType { bounds, .. })) =
+            inferred_bounds.first()
+        {
+            Ok(bounds)
+        } else {
+            Err(syn::Error::new(
+                where_clause.span(),
+                "expected `_: Verify<_>`",
+            ))
+        }?;
 
-    function_tokens.extend(tokens.chain(block));
+        let syn::TraitBound { ref path, .. } =
+            if let Some(syn::TypeParamBound::Trait(bound)) = bounds.first() {
+                Ok(bound)
+            } else {
+                Err(syn::Error::new(where_clause.span(), "expected `Verify<_>`"))
+            }?;
 
-    // Extend the where clause with trait-bound-encoded logical clauses.
-    let mut item: syn::ItemFn = syn::parse(std::iter::FromIterator::from_iter(function_tokens))?;
-    let where_clause = item.sig.generics.make_where_clause();
-    where_clause
-        .predicates
-        .extend(logic.clauses.into_iter().map(|clause| {
+        let generics = if path.segments.len() == 1
+            && path.segments.last().unwrap().ident.to_string() == "Verify"
+        {
+            Ok(&path.segments.last().unwrap().arguments)
+        } else {
+            Err(syn::Error::new(path.span(), "expected `Verify<_>`"))
+        }?;
+
+        let clauses =
+            if let syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
+                ref args,
+                ..
+            }) = generics
+            {
+                Ok(args)
+            } else {
+                Err(syn::Error::new(generics.span(), "expected `<_>`"))
+            }?;
+
+        let logic: Logic = syn::parse2(clauses.to_token_stream())?;
+        predicates.extend(logic.clauses.into_iter().map(|clause| {
             syn::WherePredicate::Type(syn::PredicateType {
                 bounded_ty: clause.0,
                 bounds: syn::parse_quote! { Same<True> },
@@ -56,8 +90,16 @@ fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
                 colon_token: Default::default(),
             })
         }));
+        where_clause.predicates = std::iter::FromIterator::from_iter(predicates);
 
-    Ok(item.into_token_stream().into())
+        Ok(Self { item })
+    }
+}
+
+impl quote::ToTokens for VerifiedFn {
+    fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
+        self.item.to_tokens(out)
+    }
 }
 
 #[derive(Debug)]
@@ -88,8 +130,72 @@ impl syn::parse::Parse for Clause {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    macro_rules! parse_test {
+        (
+            parse: $type_in:ty {
+                $in:item
+            },
+            expect: $type_out:ty {
+                $out:item
+            },
+        ) => {
+            let code_in: $type_in = syn::parse_quote! {
+                $in
+            };
+            let code_out: $type_out = syn::parse2(code_in.into_token_stream()).unwrap();
+            let expected: $type_out = syn::parse_quote! {
+                $out
+            };
+            assert_eq!(code_out, expected);
+        };
+    }
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    #[allow(non_snake_case)]
+    fn Bool_identity_clause_is_converted_bound_of_Same_True() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<B: Bool>()
+                where
+                    _: Verify<{ B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<B: Bool>()
+                where
+                    B: Same<True>
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn Multiple_Bool_identity_clauses_are_converted_to_multiple_bounds() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    _: Verify<{ A }, { B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    A: Same<True>,
+                    B: Same<True>
+                {
+                }
+            },
+        }
     }
 }

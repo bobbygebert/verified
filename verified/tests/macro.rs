@@ -11,7 +11,6 @@ fn can_verify_single_bool_identity_clause() {
         _: Verify<{ B }>,
     {
     }
-
     f::<True>();
 }
 
@@ -23,7 +22,6 @@ fn can_verify_multiple_bool_identity_clauses() {
         _: Verify<{ A }, { B }>,
     {
     }
-
     f::<True, True>();
 }
 
@@ -56,5 +54,91 @@ fn compilation_tests() {
         9 |     f::<False>();
           |         ^^^^^ the trait `verified::Same<verified::bool::True>` is not implemented for `verified::bool::False`
         "
+    );
+
+    Compile(
+        "Error_when_no_Verify_clause_found.rs",
+        "
+        use verified::*;
+        #[verify]
+        fn _f<B>()
+        where
+            B: Bool
+        {}
+        ",
+    )
+    .and_expect(
+        "
+        error: expected `_: Verify<_>`
+         --> $DIR/Error_when_no_Verify_clause_found.rs:5:5
+          |
+        5 | /     where
+        6 | |         B: Bool
+          | |_______________^
+        ",
+    );
+
+    Compile(
+        "Error_when_multiple_inferred_bounds_are_supplied.rs",
+        "
+        use verified::*;
+        #[verify]
+        fn _f<B: Bool>()
+        where
+            _: Verify<{ B }>,
+            _: Verify<{ B }>,
+        {}
+        ",
+    )
+    .and_expect(
+        "
+        error: did not expect to find second `Verify` bound
+         --> $DIR/Error_when_multiple_inferred_bounds_are_supplied.rs:7:9
+          |
+        7 |         _: Verify<{ B }>,
+          |         ^^^^^^^^^^^^^^^^
+        ",
+    );
+
+    Compile(
+        "Error_when_inferred_bound_is_not_Verify.rs",
+        "
+        use verified::*;
+        #[verify]
+        fn _f<B: Bool>()
+        where
+            _: SomethingElse<{ B }>,
+        {}
+        ",
+    )
+    .and_expect(
+        "
+        error: expected `Verify<_>`
+         --> $DIR/Error_when_inferred_bound_is_not_Verify.rs:6:12
+          |
+        6 |         _: SomethingElse<{ B }>,
+          |            ^^^^^^^^^^^^^^^^^^^^
+        ",
+    );
+
+    Compile(
+        "Error_when_clauses_are_not_angle_bracketed.rs",
+        "
+        use verified::*;
+        #[verify]
+        fn _f<B: Bool>()
+        where
+            _: Verify(B),
+        {}
+        ",
+    )
+    .and_expect(
+        "
+        error: expected `<_>`
+         --> $DIR/Error_when_clauses_are_not_angle_bracketed.rs:6:18
+          |
+        6 |         _: Verify(B),
+          |                  ^^^
+        ",
     );
 }
