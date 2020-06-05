@@ -10,3 +10,16 @@ edition = "2018"
 proc-macro = true
 
 [dependencies]
+quote = "1.0.3"
+syn = { version = "1.0.3", features = [
+    "derive",
+    "proc-macro",
+    "clone-impls",
+    "default",
+    "printing",
+    "visit",
+    "parsing",
+    "full",
+    "extra-traits",
+] }
+
