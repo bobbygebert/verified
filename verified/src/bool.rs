@@ -8,7 +8,7 @@ mod internal {
     }
 }
 
-pub trait Bool: internal::Choice<False, True> + Default {}
+pub trait Bool: internal::Choice<False, True> + Default + std::ops::Not {}
 pub trait And: Bool {}
 pub trait Or: Bool {}
 pub trait Xor: Bool {}
@@ -22,8 +22,23 @@ pub struct False;
 impl Bool for False {}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct BinOp<Lhs: Bool, Rhs: Bool>(Lhs, Rhs);
-impl<Lhs: Bool, Rhs: Bool> Bool for BinOp<Lhs, Rhs> {}
+pub struct BinOp<Lhs: Bool + std::ops::Not, Rhs: Bool + std::ops::Not>(Lhs, Rhs);
+impl<Lhs: Bool + std::ops::Not, Rhs: Bool + std::ops::Not> std::ops::Not for BinOp<Lhs, Rhs>
+where
+    <Lhs as std::ops::Not>::Output: Bool,
+    <Rhs as std::ops::Not>::Output: Bool,
+{
+    type Output = BinOp<<Lhs as std::ops::Not>::Output, <Rhs as std::ops::Not>::Output>;
+    fn not(self) -> Self::Output {
+        Default::default()
+    }
+}
+impl<Lhs: Bool + std::ops::Not, Rhs: Bool + std::ops::Not> Bool for BinOp<Lhs, Rhs>
+where
+    <Lhs as std::ops::Not>::Output: Bool,
+    <Rhs as std::ops::Not>::Output: Bool,
+{
+}
 impl And for BinOp<True, True> {}
 impl Or for BinOp<True, True> {}
 impl Or for BinOp<True, False> {}

@@ -1,3 +1,4 @@
+#![feature(box_patterns)]
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::ToTokens;
@@ -94,6 +95,16 @@ impl syn::parse::Parse for VerifiedFn {
                         colon_token: Default::default(),
                     }))
                 }
+                syn::Expr::Unary(syn::ExprUnary {
+                    op: syn::UnOp::Not(_),
+                    expr: box syn::Expr::Path(syn::ExprPath { path, .. }),
+                    ..
+                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
+                    bounded_ty: syn::parse_quote! { <#path as std::ops::Not>::Output },
+                    bounds: syn::parse_quote! { Same<True> },
+                    lifetimes: Default::default(),
+                    colon_token: Default::default(),
+                })),
                 syn::Expr::Binary(syn::ExprBinary {
                     left,
                     op: syn::BinOp::Eq(_),
@@ -226,7 +237,12 @@ mod tests {
             let expected: $type_out = syn::parse_quote! {
                 $out
             };
-            assert_eq!(code_out, expected);
+            if code_out != expected {
+                assert_eq!(
+                    code_out.into_token_stream().to_string(),
+                    expected.into_token_stream().to_string(),
+                );
+            }
         };
     }
 
@@ -302,7 +318,7 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn Bool_and_clause_is_converted_to_Same_bound_on_BitAnd_Output() {
+    fn Bool_and_clause_is_converted_to_And_bound_on_BinOp() {
         parse_test! {
             parse: VerifiedFn
             {
@@ -326,7 +342,7 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn Bool_or_clause_is_converted_to_Same_bound_on_BitOr_Output() {
+    fn Bool_or_clause_is_converted_to_Or_bound_on_BinOp() {
         parse_test! {
             parse: VerifiedFn
             {
@@ -350,7 +366,7 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn Bool_xor_clause_is_converted_to_Same_bound_on_BitXor_Output() {
+    fn Bool_xor_clause_is_converted_to_Xor_bound_on_BinOp() {
         parse_test! {
             parse: VerifiedFn
             {
@@ -365,6 +381,29 @@ mod tests {
                 fn f<A: Bool, B: Bool>()
                 where
                     BinOp<A, B>: Xor,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn Bool_not_clause_is_converted_to_Same_bound_on_BitXor_Output() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<B: Bool>()
+                where
+                    _: Verify<{ !B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<B: Bool>()
+                where
+                    <B as std::ops::Not>::Output: Same<True>,
                 {
                 }
             },
