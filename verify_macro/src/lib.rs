@@ -1,4 +1,3 @@
-#![feature(box_patterns)]
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::ToTokens;
@@ -144,14 +143,23 @@ impl TryFrom<Clause> for Vec<syn::PredicateType> {
             }]),
             syn::Expr::Unary(syn::ExprUnary {
                 op: syn::UnOp::Not(_),
-                expr: box syn::Expr::Path(syn::ExprPath { path, .. }),
+                expr,
                 ..
-            }) => Ok(vec![syn::PredicateType {
-                bounded_ty: syn::parse_quote! { <#path as std::ops::Not>::Output },
-                bounds: syn::parse_quote! { Same<True> },
-                lifetimes: Default::default(),
-                colon_token: Default::default(),
-            }]),
+            }) => {
+                if let syn::Expr::Path(syn::ExprPath { path, .. }) = *expr {
+                    Ok(vec![syn::PredicateType {
+                        bounded_ty: syn::parse_quote! { <#path as std::ops::Not>::Output },
+                        bounds: syn::parse_quote! { Same<True> },
+                        lifetimes: Default::default(),
+                        colon_token: Default::default(),
+                    }])
+                } else {
+                    Err(syn::Error::new(
+                        expr.span(),
+                        "unsupported logical expression",
+                    ))
+                }
+            }
             syn::Expr::Binary(syn::ExprBinary {
                 left,
                 op: syn::BinOp::Eq(_),
