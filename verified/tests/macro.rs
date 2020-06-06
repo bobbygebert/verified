@@ -41,8 +41,6 @@ fn can_verify_bool_and_clause() {
     fn f<A: Bool, B: Bool>()
     where
         _: Verify<{ A && B }, { A & B }>,
-        // TODO: Eliminate the need for these bounds.
-        A: std::ops::BitAnd<B>,
     {
     }
     f::<True, True>();
@@ -54,8 +52,6 @@ fn can_verify_bool_or_clause() {
     fn f<A: Bool, B: Bool>()
     where
         _: Verify<{ A || B }, { A | B }>,
-        // TODO: Eliminate the need for these bounds.
-        A: std::ops::BitOr<B>,
     {
     }
     f::<False, True>();
@@ -68,7 +64,6 @@ fn can_verify_bool_xor_clause() {
     #[verify]
     fn f<A: Bool, B: Bool>()
     where
-        A: std::ops::BitXor<B>,
         _: Verify<{ A ^ B }>,
     {
     }

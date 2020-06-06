@@ -111,8 +111,8 @@ impl syn::parse::Parse for VerifiedFn {
                     right,
                     ..
                 }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { <#left as std::ops::BitAnd<#right>>::Output },
-                    bounds: syn::parse_quote! { Same<True> },
+                    bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
+                    bounds: syn::parse_quote! { And },
                     lifetimes: Default::default(),
                     colon_token: Default::default(),
                 })),
@@ -122,8 +122,8 @@ impl syn::parse::Parse for VerifiedFn {
                     right,
                     ..
                 }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { <#left as std::ops::BitAnd<#right>>::Output },
-                    bounds: syn::parse_quote! { Same<True> },
+                    bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
+                    bounds: syn::parse_quote! { And },
                     lifetimes: Default::default(),
                     colon_token: Default::default(),
                 })),
@@ -133,8 +133,8 @@ impl syn::parse::Parse for VerifiedFn {
                     right,
                     ..
                 }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { <#left as std::ops::BitOr<#right>>::Output },
-                    bounds: syn::parse_quote! { Same<True> },
+                    bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
+                    bounds: syn::parse_quote! { Or },
                     lifetimes: Default::default(),
                     colon_token: Default::default(),
                 })),
@@ -144,8 +144,8 @@ impl syn::parse::Parse for VerifiedFn {
                     right,
                     ..
                 }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { <#left as std::ops::BitOr<#right>>::Output },
-                    bounds: syn::parse_quote! { Same<True> },
+                    bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
+                    bounds: syn::parse_quote! { Or },
                     lifetimes: Default::default(),
                     colon_token: Default::default(),
                 })),
@@ -155,8 +155,8 @@ impl syn::parse::Parse for VerifiedFn {
                     right,
                     ..
                 }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { <#left as std::ops::BitXor<#right>>::Output },
-                    bounds: syn::parse_quote! { Same<True> },
+                    bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
+                    bounds: syn::parse_quote! { Xor },
                     lifetimes: Default::default(),
                     colon_token: Default::default(),
                 })),
@@ -316,8 +316,8 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    <A as std::ops::BitAnd<B>>::Output: Same<True>,
-                    <A as std::ops::BitAnd<B>>::Output: Same<True>,
+                    BinOp<A, B>: And,
+                    BinOp<A, B>: And,
                 {
                 }
             },
@@ -340,8 +340,8 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    <A as std::ops::BitOr<B>>::Output: Same<True>,
-                    <A as std::ops::BitOr<B>>::Output: Same<True>,
+                    BinOp<A, B>: Or,
+                    BinOp<A, B>: Or,
                 {
                 }
             },
@@ -364,7 +364,7 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    <A as std::ops::BitXor<B>>::Output: Same<True>,
+                    BinOp<A, B>: Xor,
                 {
                 }
             },

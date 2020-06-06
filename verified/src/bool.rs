@@ -2,9 +2,16 @@ mod internal {
     pub trait Choice<A, B> {}
     impl Choice<super::False, super::True> for super::True {}
     impl Choice<super::False, super::True> for super::False {}
+    impl<Lhs: super::Bool, Rhs: super::Bool> Choice<super::False, super::True>
+        for super::BinOp<Lhs, Rhs>
+    {
+    }
 }
 
 pub trait Bool: internal::Choice<False, True> + Default {}
+pub trait And: Bool {}
+pub trait Or: Bool {}
+pub trait Xor: Bool {}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct True;
@@ -13,6 +20,16 @@ impl Bool for True {}
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct False;
 impl Bool for False {}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BinOp<Lhs: Bool, Rhs: Bool>(Lhs, Rhs);
+impl<Lhs: Bool, Rhs: Bool> Bool for BinOp<Lhs, Rhs> {}
+impl And for BinOp<True, True> {}
+impl Or for BinOp<True, True> {}
+impl Or for BinOp<True, False> {}
+impl Or for BinOp<False, True> {}
+impl Xor for BinOp<False, True> {}
+impl Xor for BinOp<True, False> {}
 
 impl From<True> for bool {
     fn from(_: True) -> Self {
@@ -448,5 +465,47 @@ mod tests {
     #[test]
     fn True_is_greater_than_False() {
         assert!(True > False);
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn And_is_implemented_for_True_True() {
+        fn and_is_implemented<Op: And>(_: Op) -> bool { true }
+        assert!(and_is_implemented(BinOp(True, True)));
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn Or_is_implemented_for_True_True() {
+        fn or_is_implemented<Op: Or>(_: Op) -> bool { true }
+        assert!(or_is_implemented(BinOp(True, True)));
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn Or_is_implemented_for_True_False() {
+        fn or_is_implemented<Op: Or>(_: Op) -> bool { true }
+        assert!(or_is_implemented(BinOp(True, False)));
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn Or_is_implemented_for_False_True() {
+        fn or_is_implemented<Op: Or>(_: Op) -> bool { true }
+        assert!(or_is_implemented(BinOp(False, True)));
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn Xor_is_implemented_for_False_True() {
+        fn xor_is_implemented<Op: Xor>(_: Op) -> bool { true }
+        assert!(xor_is_implemented(BinOp(False, True)));
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn Xor_is_implemented_for_True_False() {
+        fn xor_is_implemented<Op: Xor>(_: Op) -> bool { true }
+        assert!(xor_is_implemented(BinOp(True, False)));
     }
 }
