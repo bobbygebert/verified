@@ -25,6 +25,58 @@ fn can_verify_multiple_bool_identity_clauses() {
 }
 
 #[test]
+fn can_verify_bool_equality_clause() {
+    #[verify]
+    fn f<A: Bool, B: Bool>()
+    where
+        _: Verify<{ A == B }>,
+    {
+    }
+    f::<False, False>();
+}
+
+#[test]
+fn can_verify_bool_and_clause() {
+    #[verify]
+    fn f<A: Bool, B: Bool>()
+    where
+        _: Verify<{ A && B }, { A & B }>,
+        // TODO: Eliminate the need for these bounds.
+        A: std::ops::BitAnd<B>,
+    {
+    }
+    f::<True, True>();
+}
+
+#[test]
+fn can_verify_bool_or_clause() {
+    #[verify]
+    fn f<A: Bool, B: Bool>()
+    where
+        _: Verify<{ A || B }, { A | B }>,
+        // TODO: Eliminate the need for these bounds.
+        A: std::ops::BitOr<B>,
+    {
+    }
+    f::<False, True>();
+    f::<True, False>();
+    f::<True, True>();
+}
+
+#[test]
+fn can_verify_bool_xor_clause() {
+    #[verify]
+    fn f<A: Bool, B: Bool>()
+    where
+        A: std::ops::BitXor<B>,
+        _: Verify<{ A ^ B }>,
+    {
+    }
+    f::<False, True>();
+    f::<True, False>();
+}
+
+#[test]
 #[ignore] // TODO: figure out how to make this test pass in automation.
 #[allow(non_snake_case)]
 fn compilation_tests() {
@@ -139,6 +191,27 @@ fn compilation_tests() {
           |
         6 |         _: Verify(B),
           |                  ^^^
+        ",
+    );
+
+    Compile(
+        "Error_on_unsupported_expression_in_clause.rs",
+        "
+        use verified::*;
+        #[verify]
+        fn _f<A: Bool, B: Bool>()
+        where
+            _: Verify<{ A * B }>,
+        {}
+        ",
+    )
+    .and_expect(
+        "
+        error: unsupported logical expression
+         --> $DIR/Error_on_unsupported_expression_in_clause.rs:6:21
+          |
+        6 |         _: Verify<{ A * B }>,
+          |                     ^^^^^
         ",
     );
 }

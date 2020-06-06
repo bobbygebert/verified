@@ -82,14 +82,92 @@ impl syn::parse::Parse for VerifiedFn {
             }?;
 
         let logic: Logic = syn::parse2(clauses.to_token_stream())?;
-        predicates.extend(logic.clauses.into_iter().map(|clause| {
-            syn::WherePredicate::Type(syn::PredicateType {
-                bounded_ty: clause.0,
-                bounds: syn::parse_quote! { Same<True> },
-                lifetimes: Default::default(),
-                colon_token: Default::default(),
-            })
-        }));
+
+        // TODO: Minimize duplicated code.
+        for clause in logic.clauses.into_iter() {
+            let predicate = match clause.0 {
+                syn::Expr::Path(syn::ExprPath { path, .. }) => {
+                    Ok(syn::WherePredicate::Type(syn::PredicateType {
+                        bounded_ty: syn::parse_quote! { #path },
+                        bounds: syn::parse_quote! { Same<True> },
+                        lifetimes: Default::default(),
+                        colon_token: Default::default(),
+                    }))
+                }
+                syn::Expr::Binary(syn::ExprBinary {
+                    left,
+                    op: syn::BinOp::Eq(_),
+                    right,
+                    ..
+                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
+                    bounded_ty: syn::parse_quote! { #left },
+                    bounds: syn::parse_quote! { Same<#right> },
+                    lifetimes: Default::default(),
+                    colon_token: Default::default(),
+                })),
+                syn::Expr::Binary(syn::ExprBinary {
+                    left,
+                    op: syn::BinOp::And(_),
+                    right,
+                    ..
+                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
+                    bounded_ty: syn::parse_quote! { <#left as std::ops::BitAnd<#right>>::Output },
+                    bounds: syn::parse_quote! { Same<True> },
+                    lifetimes: Default::default(),
+                    colon_token: Default::default(),
+                })),
+                syn::Expr::Binary(syn::ExprBinary {
+                    left,
+                    op: syn::BinOp::BitAnd(_),
+                    right,
+                    ..
+                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
+                    bounded_ty: syn::parse_quote! { <#left as std::ops::BitAnd<#right>>::Output },
+                    bounds: syn::parse_quote! { Same<True> },
+                    lifetimes: Default::default(),
+                    colon_token: Default::default(),
+                })),
+                syn::Expr::Binary(syn::ExprBinary {
+                    left,
+                    op: syn::BinOp::Or(_),
+                    right,
+                    ..
+                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
+                    bounded_ty: syn::parse_quote! { <#left as std::ops::BitOr<#right>>::Output },
+                    bounds: syn::parse_quote! { Same<True> },
+                    lifetimes: Default::default(),
+                    colon_token: Default::default(),
+                })),
+                syn::Expr::Binary(syn::ExprBinary {
+                    left,
+                    op: syn::BinOp::BitOr(_),
+                    right,
+                    ..
+                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
+                    bounded_ty: syn::parse_quote! { <#left as std::ops::BitOr<#right>>::Output },
+                    bounds: syn::parse_quote! { Same<True> },
+                    lifetimes: Default::default(),
+                    colon_token: Default::default(),
+                })),
+                syn::Expr::Binary(syn::ExprBinary {
+                    left,
+                    op: syn::BinOp::BitXor(_),
+                    right,
+                    ..
+                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
+                    bounded_ty: syn::parse_quote! { <#left as std::ops::BitXor<#right>>::Output },
+                    bounds: syn::parse_quote! { Same<True> },
+                    lifetimes: Default::default(),
+                    colon_token: Default::default(),
+                })),
+                unsupported_expr => Err(syn::Error::new(
+                    unsupported_expr.span(),
+                    "unsupported logical expression",
+                )),
+            }?;
+            predicates.push(predicate);
+        }
+
         where_clause.predicates = std::iter::FromIterator::from_iter(predicates);
 
         Ok(Self { item })
@@ -118,7 +196,7 @@ impl syn::parse::Parse for Logic {
 }
 
 #[derive(Debug)]
-struct Clause(syn::Type);
+struct Clause(syn::Expr);
 
 impl syn::parse::Parse for Clause {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
@@ -193,6 +271,100 @@ mod tests {
                 where
                     A: Same<True>,
                     B: Same<True>
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn Bool_equality_clause_is_converted_to_Same_bound() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    _: Verify<{ A == B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    A: Same<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn Bool_and_clause_is_converted_to_Same_bound_on_BitAnd_Output() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    _: Verify<{ A && B }, { A & B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    <A as std::ops::BitAnd<B>>::Output: Same<True>,
+                    <A as std::ops::BitAnd<B>>::Output: Same<True>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn Bool_or_clause_is_converted_to_Same_bound_on_BitOr_Output() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    _: Verify<{ A || B }, { A | B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    <A as std::ops::BitOr<B>>::Output: Same<True>,
+                    <A as std::ops::BitOr<B>>::Output: Same<True>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn Bool_xor_clause_is_converted_to_Same_bound_on_BitXor_Output() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    _: Verify<{ A ^ B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    <A as std::ops::BitXor<B>>::Output: Same<True>,
                 {
                 }
             },
