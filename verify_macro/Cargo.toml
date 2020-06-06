@@ -1,8 +1,12 @@
 [package]
 name = "verify_macro"
+description = "An attribute that automatically instruments code with logical type bounds."
 version = "0.1.0"
 authors = ["Bob Gebert <bobgebert7@gmail.com>"]
 edition = "2018"
+license = "MIT"
+repository = "https://github.com/bobbygebert/verified/"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
