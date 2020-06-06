@@ -1,4 +1,3 @@
-#![feature(proc_macro_hygiene)]
 mod compile;
 use compile::Compile;
 use verified::*;
