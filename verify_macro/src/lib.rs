@@ -2,6 +2,7 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::ToTokens;
+use std::convert::{TryFrom, TryInto};
 use syn::spanned::Spanned;
 
 #[proc_macro_attribute]
@@ -86,97 +87,11 @@ impl syn::parse::Parse for VerifiedFn {
 
         // TODO: Minimize duplicated code.
         for clause in logic.clauses.into_iter() {
-            let predicate = match clause.0 {
-                syn::Expr::Path(syn::ExprPath { path, .. }) => {
-                    Ok(syn::WherePredicate::Type(syn::PredicateType {
-                        bounded_ty: syn::parse_quote! { #path },
-                        bounds: syn::parse_quote! { Same<True> },
-                        lifetimes: Default::default(),
-                        colon_token: Default::default(),
-                    }))
-                }
-                syn::Expr::Unary(syn::ExprUnary {
-                    op: syn::UnOp::Not(_),
-                    expr: box syn::Expr::Path(syn::ExprPath { path, .. }),
-                    ..
-                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { <#path as std::ops::Not>::Output },
-                    bounds: syn::parse_quote! { Same<True> },
-                    lifetimes: Default::default(),
-                    colon_token: Default::default(),
-                })),
-                syn::Expr::Binary(syn::ExprBinary {
-                    left,
-                    op: syn::BinOp::Eq(_),
-                    right,
-                    ..
-                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { #left },
-                    bounds: syn::parse_quote! { Same<#right> },
-                    lifetimes: Default::default(),
-                    colon_token: Default::default(),
-                })),
-                syn::Expr::Binary(syn::ExprBinary {
-                    left,
-                    op: syn::BinOp::And(_),
-                    right,
-                    ..
-                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
-                    bounds: syn::parse_quote! { And },
-                    lifetimes: Default::default(),
-                    colon_token: Default::default(),
-                })),
-                syn::Expr::Binary(syn::ExprBinary {
-                    left,
-                    op: syn::BinOp::BitAnd(_),
-                    right,
-                    ..
-                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
-                    bounds: syn::parse_quote! { And },
-                    lifetimes: Default::default(),
-                    colon_token: Default::default(),
-                })),
-                syn::Expr::Binary(syn::ExprBinary {
-                    left,
-                    op: syn::BinOp::Or(_),
-                    right,
-                    ..
-                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
-                    bounds: syn::parse_quote! { Or },
-                    lifetimes: Default::default(),
-                    colon_token: Default::default(),
-                })),
-                syn::Expr::Binary(syn::ExprBinary {
-                    left,
-                    op: syn::BinOp::BitOr(_),
-                    right,
-                    ..
-                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
-                    bounds: syn::parse_quote! { Or },
-                    lifetimes: Default::default(),
-                    colon_token: Default::default(),
-                })),
-                syn::Expr::Binary(syn::ExprBinary {
-                    left,
-                    op: syn::BinOp::BitXor(_),
-                    right,
-                    ..
-                }) => Ok(syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
-                    bounds: syn::parse_quote! { Xor },
-                    lifetimes: Default::default(),
-                    colon_token: Default::default(),
-                })),
-                unsupported_expr => Err(syn::Error::new(
-                    unsupported_expr.span(),
-                    "unsupported logical expression",
-                )),
-            }?;
-            predicates.push(predicate);
+            predicates.extend(
+                TryInto::<Vec<_>>::try_into(clause)?
+                    .into_iter()
+                    .map(|p| syn::WherePredicate::Type(p)),
+            );
         }
 
         where_clause.predicates = std::iter::FromIterator::from_iter(predicates);
@@ -214,6 +129,101 @@ impl syn::parse::Parse for Clause {
         let clause;
         let _ = syn::braced!(clause in input);
         Ok(Self(clause.parse()?))
+    }
+}
+
+impl TryFrom<Clause> for Vec<syn::PredicateType> {
+    type Error = syn::Error;
+    fn try_from(clause: Clause) -> syn::Result<Self> {
+        match clause.0 {
+            syn::Expr::Path(syn::ExprPath { path, .. }) => Ok(vec![syn::PredicateType {
+                bounded_ty: syn::parse_quote! { #path },
+                bounds: syn::parse_quote! { Same<True> },
+                lifetimes: Default::default(),
+                colon_token: Default::default(),
+            }]),
+            syn::Expr::Unary(syn::ExprUnary {
+                op: syn::UnOp::Not(_),
+                expr: box syn::Expr::Path(syn::ExprPath { path, .. }),
+                ..
+            }) => Ok(vec![syn::PredicateType {
+                bounded_ty: syn::parse_quote! { <#path as std::ops::Not>::Output },
+                bounds: syn::parse_quote! { Same<True> },
+                lifetimes: Default::default(),
+                colon_token: Default::default(),
+            }]),
+            syn::Expr::Binary(syn::ExprBinary {
+                left,
+                op: syn::BinOp::Eq(_),
+                right,
+                ..
+            }) => Ok(vec![syn::PredicateType {
+                bounded_ty: syn::parse_quote! { #left },
+                bounds: syn::parse_quote! { Same<#right> },
+                lifetimes: Default::default(),
+                colon_token: Default::default(),
+            }]),
+            syn::Expr::Binary(syn::ExprBinary {
+                left,
+                op: syn::BinOp::And(_),
+                right,
+                ..
+            }) => Ok(vec![syn::PredicateType {
+                bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
+                bounds: syn::parse_quote! { And },
+                lifetimes: Default::default(),
+                colon_token: Default::default(),
+            }]),
+            syn::Expr::Binary(syn::ExprBinary {
+                left,
+                op: syn::BinOp::BitAnd(_),
+                right,
+                ..
+            }) => Ok(vec![syn::PredicateType {
+                bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
+                bounds: syn::parse_quote! { And },
+                lifetimes: Default::default(),
+                colon_token: Default::default(),
+            }]),
+            syn::Expr::Binary(syn::ExprBinary {
+                left,
+                op: syn::BinOp::Or(_),
+                right,
+                ..
+            }) => Ok(vec![syn::PredicateType {
+                bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
+                bounds: syn::parse_quote! { Or },
+                lifetimes: Default::default(),
+                colon_token: Default::default(),
+            }]),
+            syn::Expr::Binary(syn::ExprBinary {
+                left,
+                op: syn::BinOp::BitOr(_),
+                right,
+                ..
+            }) => Ok(vec![syn::PredicateType {
+                bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
+                bounds: syn::parse_quote! { Or },
+                lifetimes: Default::default(),
+                colon_token: Default::default(),
+            }]),
+            syn::Expr::Binary(syn::ExprBinary {
+                left,
+                op: syn::BinOp::BitXor(_),
+                right,
+                ..
+            }) => Ok(vec![syn::PredicateType {
+                bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
+                bounds: syn::parse_quote! { Xor },
+                lifetimes: Default::default(),
+                colon_token: Default::default(),
+            }]),
+            syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok(Clause(*expr).try_into()?),
+            unsupported_expr => Err(syn::Error::new(
+                unsupported_expr.span(),
+                "unsupported logical expression",
+            )),
+        }
     }
 }
 
@@ -396,6 +406,29 @@ mod tests {
                 fn f<B: Bool>()
                 where
                     _: Verify<{ !B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<B: Bool>()
+                where
+                    <B as std::ops::Not>::Output: Same<True>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn parenthesized_Bool_clauses_are_unwrapped() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<B: Bool>()
+                where
+                    _: Verify<{ (!B) }>,
                 {
                 }
             },

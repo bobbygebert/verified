@@ -83,6 +83,17 @@ fn can_verify_bool_not_clause() {
 }
 
 #[test]
+fn can_verify_parenthesised_clause() {
+    #[verify]
+    fn f<B: Bool>()
+    where
+        _: Verify<{ (B) }>,
+    {
+    }
+    f::<True>();
+}
+
+#[test]
 #[ignore] // TODO: figure out how to make this test pass in automation.
 #[allow(non_snake_case)]
 fn compilation_tests() {
