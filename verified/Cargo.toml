@@ -1,7 +1,7 @@
 [package]
 name = "verified"
 description = "A library of types to facilitate the development of verifiable rust."
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Bob Gebert <bobgebert7@gmail.com>"]
 edition = "2018"
 license = "MIT"
