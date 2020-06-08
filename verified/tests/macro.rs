@@ -94,6 +94,28 @@ fn can_verify_parenthesised_clause() {
 }
 
 #[test]
+fn can_verify_nested_binary_clauses() {
+    #[verify]
+    fn f<A: Bool, B: Bool, C: Bool>()
+    where
+        _: Verify<{ (A && (B || C)) == C }>,
+    {
+    }
+    f::<True, False, False>();
+}
+
+#[test]
+fn can_verify_nested_unary_clause() {
+    #[verify]
+    fn f<A: Bool, B: Bool>()
+    where
+        _: Verify<{ !(A && B) }>,
+    {
+    }
+    f::<True, False>();
+}
+
+#[test]
 #[ignore] // TODO: figure out how to make this test pass in automation.
 #[allow(non_snake_case)]
 fn compilation_tests() {

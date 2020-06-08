@@ -154,6 +154,7 @@ macro_rules! expression {
         })
     }
 }
+
 macro_rules! predicate {
     ({$($left:tt)*}: {$($right:tt)*}) => {
         syn::PredicateType {
@@ -164,28 +165,86 @@ macro_rules! predicate {
         }
     };
 }
+
 impl TryFrom<Clause> for Vec<syn::PredicateType> {
     type Error = syn::Error;
     fn try_from(clause: Clause) -> syn::Result<Self> {
-        clause.try_into().map(|p| vec![p])
+        let op: Op = clause.try_into()?;
+        Ok(vec![op.clone().try_into()?]
+            .into_iter()
+            .chain(TryInto::<Self>::try_into(ImplPredicate(op))?.into_iter())
+            .collect())
     }
 }
-impl TryFrom<Clause> for syn::PredicateType {
+
+impl TryFrom<ImplPredicate> for Vec<syn::PredicateType> {
     type Error = syn::Error;
-    fn try_from(clause: Clause) -> syn::Result<Self> {
-        let op: Op = clause.try_into()?;
-        Ok(match op {
-            Op {
+    fn try_from(ImplPredicate(from): ImplPredicate) -> syn::Result<Self> {
+        Ok(match from {
+            Op::Op {
                 op,
                 left,
                 right: Some(right),
-            } => predicate! {{ #left }: { #op<#right, Output = True> }},
-            Op {
+            } => {
+                let left_ty: syn::Type = (*left.clone()).try_into()?;
+                let right_ty: syn::Type = (*right.clone()).try_into()?;
+                vec![predicate! {{ #left_ty }: { #op<#right_ty> }}]
+                    .into_iter()
+                    .chain(TryInto::<Self>::try_into(ImplPredicate(*left))?.into_iter())
+                    .chain(TryInto::<Self>::try_into(ImplPredicate(*right))?.into_iter())
+                    .collect()
+            }
+            Op::Op {
                 op,
                 left,
                 right: None,
-            } => predicate! {{ #left }: { #op<Output = True> }},
+            } => {
+                let left_ty: syn::Type = (*left.clone()).try_into()?;
+                vec![predicate! {{ #left_ty }: { #op }}]
+                    .into_iter()
+                    .chain(TryInto::<Self>::try_into(ImplPredicate(*left))?.into_iter())
+                    .collect()
+            }
+            Op::Path(_) => vec![],
         })
+    }
+}
+
+impl TryFrom<Op> for syn::PredicateType {
+    type Error = syn::Error;
+    fn try_from(from: Op) -> syn::Result<Self> {
+        match from {
+            Op::Op { op, left, right } => {
+                let left: syn::Type = (*left).try_into()?;
+                Ok(match right {
+                    Some(right) => {
+                        let right: syn::Type = (*right).try_into()?;
+                        predicate! {{ #left }: { #op<#right, Output = True> }}
+                    }
+                    None => predicate! {{ #left }: { #op<Output = True> }},
+                })
+            }
+            Op::Path(path) => Ok(predicate! {{ #path }: { Same<True, Output = True> }}),
+        }
+    }
+}
+
+impl TryFrom<Op> for syn::Type {
+    type Error = syn::Error;
+    fn try_from(from: Op) -> syn::Result<Self> {
+        match from {
+            Op::Op { op, left, right } => {
+                let left: syn::Type = (*left).try_into()?;
+                Ok(match right {
+                    Some(right) => {
+                        let right: syn::Type = (*right).try_into()?;
+                        syn::parse_quote! { <#left as #op<#right>>::Output }
+                    }
+                    None => syn::parse_quote! { <#left as #op>::Output },
+                })
+            }
+            Op::Path(path) => Ok(syn::parse_quote!(#path)),
+        }
     }
 }
 
@@ -193,54 +252,41 @@ impl TryFrom<Clause> for Op {
     type Error = syn::Error;
     fn try_from(clause: Clause) -> syn::Result<Self> {
         match clause.0 {
-            expression!(path) => Ok(Op {
+            expression!(path) => Ok(Op::Path(path)),
+            expression!(Not, expr) => Ok(Op::Op {
+                op: syn::parse_quote!(std::ops::Not),
+                left: Box::new(Clause(*expr).try_into()?),
+                right: None,
+            }),
+            expression!(Eq, left, right) => Ok(Op::Op {
                 op: syn::parse_quote!(Same),
-                left: syn::parse_quote!(#path),
-                right: Some(syn::parse_quote!(True)),
+                left: Box::new(Clause(*left).try_into()?),
+                right: Some(Box::new(Clause(*right).try_into()?)),
             }),
-            expression!(Not, expr) => {
-                if let syn::Expr::Path(syn::ExprPath { path, .. }) = *expr {
-                    Ok(Op {
-                        op: syn::parse_quote!(std::ops::Not),
-                        left: syn::parse_quote!(#path),
-                        right: None,
-                    })
-                } else {
-                    Err(syn::Error::new(
-                        expr.span(),
-                        "unsupported logical expression",
-                    ))
-                }
-            }
-            expression!(Eq, left, right) => Ok(Op {
-                op: syn::parse_quote!(Same),
-                left: syn::parse_quote!(#left),
-                right: Some(syn::parse_quote!(#right)),
-            }),
-            expression!(And, left, right) => Ok(Op {
+            expression!(And, left, right) => Ok(Op::Op {
                 op: syn::parse_quote!(And),
-                left: syn::parse_quote!(#left),
-                right: Some(syn::parse_quote!(#right)),
+                left: Box::new(Clause(*left).try_into()?),
+                right: Some(Box::new(Clause(*right).try_into()?)),
             }),
-            expression!(BitAnd, left, right) => Ok(Op {
+            expression!(BitAnd, left, right) => Ok(Op::Op {
                 op: syn::parse_quote!(And),
-                left: syn::parse_quote!(#left),
-                right: Some(syn::parse_quote!(#right)),
+                left: Box::new(Clause(*left).try_into()?),
+                right: Some(Box::new(Clause(*right).try_into()?)),
             }),
-            expression!(Or, left, right) => Ok(Op {
+            expression!(Or, left, right) => Ok(Op::Op {
                 op: syn::parse_quote!(Or),
-                left: syn::parse_quote!(#left),
-                right: Some(syn::parse_quote!(#right)),
+                left: Box::new(Clause(*left).try_into()?),
+                right: Some(Box::new(Clause(*right).try_into()?)),
             }),
-            expression!(BitOr, left, right) => Ok(Op {
+            expression!(BitOr, left, right) => Ok(Op::Op {
                 op: syn::parse_quote!(Or),
-                left: syn::parse_quote!(#left),
-                right: Some(syn::parse_quote!(#right)),
+                left: Box::new(Clause(*left).try_into()?),
+                right: Some(Box::new(Clause(*right).try_into()?)),
             }),
-            expression!(BitXor, left, right) => Ok(Op {
+            expression!(BitXor, left, right) => Ok(Op::Op {
                 op: syn::parse_quote!(Xor),
-                left: syn::parse_quote!(#left),
-                right: Some(syn::parse_quote!(#right)),
+                left: Box::new(Clause(*left).try_into()?),
+                right: Some(Box::new(Clause(*right).try_into()?)),
             }),
             syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok(Clause(*expr).try_into()?),
             unsupported_expr => Err(syn::Error::new(
@@ -251,12 +297,17 @@ impl TryFrom<Clause> for Op {
     }
 }
 
-#[derive(Debug)]
-struct Op {
-    op: syn::Path,
-    left: syn::Type,
-    right: Option<syn::Type>,
+#[derive(Clone, Debug)]
+enum Op {
+    Op {
+        op: syn::Path,
+        left: Box<Self>,
+        right: Option<Box<Self>>,
+    },
+    Path(syn::Path),
 }
+
+struct ImplPredicate(Op);
 
 #[cfg(test)]
 mod tests {
@@ -351,6 +402,7 @@ mod tests {
                 fn f<A: Bool, B: Bool>()
                 where
                     A: Same<B, Output = True>,
+                    A: Same<B>,
                 {
                 }
             },
@@ -374,7 +426,9 @@ mod tests {
                 fn f<A: Bool, B: Bool>()
                 where
                     A: And<B, Output = True>,
+                    A: And<B>,
                     A: And<B, Output = True>,
+                    A: And<B>,
                 {
                 }
             },
@@ -398,7 +452,9 @@ mod tests {
                 fn f<A: Bool, B: Bool>()
                 where
                     A: Or<B, Output = True>,
+                    A: Or<B>,
                     A: Or<B, Output = True>,
+                    A: Or<B>,
                 {
                 }
             },
@@ -422,6 +478,7 @@ mod tests {
                 fn f<A: Bool, B: Bool>()
                 where
                     A: Xor<B, Output = True>,
+                    A: Xor<B>,
                 {
                 }
             },
@@ -445,6 +502,7 @@ mod tests {
                 fn f<B: Bool>()
                 where
                     B: std::ops::Not<Output = True>,
+                    B: std::ops::Not,
                 {
                 }
             },
@@ -468,6 +526,58 @@ mod tests {
                 fn f<B: Bool>()
                 where
                     B: std::ops::Not<Output = True>,
+                    B: std::ops::Not,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn unary_op_can_be_applied_to_nested_clause() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    _: Verify<{ !(A && B ) }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Bool, B: Bool>()
+                where
+                    <A as And<B>>::Output: std::ops::Not<Output = True>,
+                    <A as And<B>>::Output: std::ops::Not,
+                    A: And<B>
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn binary_op_can_be_applied_to_nested_clause() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Bool, B: Bool, C: Bool>()
+                where
+                    _: Verify<{ (A && (B || C)) == C }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Bool, B: Bool, C: Bool>()
+                where
+                    <A as And<<B as Or<C>>::Output>>::Output: Same<C, Output = True>,
+                    <A as And<<B as Or<C>>::Output>>::Output: Same<C>,
+                    A: And<<B as Or<C>>::Output>,
+                    B: Or<C>,
                 {
                 }
             },
