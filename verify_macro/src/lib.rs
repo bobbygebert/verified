@@ -87,7 +87,6 @@ impl syn::parse::Parse for VerifiedFn {
 
         let logic: Logic = syn::parse2(clauses.to_token_stream())?;
 
-        // TODO: Minimize duplicated code.
         for clause in logic.clauses.into_iter() {
             predicates.extend(
                 TryInto::<Vec<_>>::try_into(clause)?
