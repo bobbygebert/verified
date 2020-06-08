@@ -17,10 +17,13 @@ fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
     Ok(verified_fn.item.into_token_stream().into())
 }
 
-#[derive(Debug)]
-struct VerifiedFn {
-    item: syn::ItemFn,
-}
+//  ____                _
+// |  _ \ __ _ _ __ ___(_)_ __   __ _
+// | |_) / _` | '__/ __| | '_ \ / _` |
+// |  __/ (_| | |  \__ \ | | | | (_| |
+// |_|   \__,_|_|  |___/_|_| |_|\__, |
+//                              |___/
+//  FIGLET: Parsing
 
 impl syn::parse::Parse for VerifiedFn {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
@@ -99,17 +102,6 @@ impl syn::parse::Parse for VerifiedFn {
     }
 }
 
-impl quote::ToTokens for VerifiedFn {
-    fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
-        self.item.to_tokens(out)
-    }
-}
-
-#[derive(Debug)]
-struct Logic {
-    clauses: Vec<Clause>,
-}
-
 impl syn::parse::Parse for Logic {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let clauses =
@@ -120,9 +112,6 @@ impl syn::parse::Parse for Logic {
     }
 }
 
-#[derive(Debug)]
-struct Clause(syn::Expr);
-
 impl syn::parse::Parse for Clause {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let clause;
@@ -130,6 +119,19 @@ impl syn::parse::Parse for Clause {
         Ok(Self(clause.parse()?))
     }
 }
+
+impl quote::ToTokens for VerifiedFn {
+    fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
+        self.item.to_tokens(out)
+    }
+}
+
+//  _____                    _       _   _
+// |_   _| __ __ _ _ __  ___| | __ _| |_(_) ___  _ __  ___
+//   | || '__/ _` | '_ \/ __| |/ _` | __| |/ _ \| '_ \/ __|
+//   | || | | (_| | | | \__ \ | (_| | |_| | (_) | | | \__ \
+//   |_||_|  \__,_|_| |_|___/_|\__,_|\__|_|\___/|_| |_|___/
+//  FIGLET: Translations
 
 macro_rules! expression {
     ($path:ident) => {
@@ -286,6 +288,29 @@ impl TryFrom<Clause> for Op {
     }
 }
 
+//  _____
+// |_   _|   _ _ __   ___  ___
+//   | || | | | '_ \ / _ \/ __|
+//   | || |_| | |_) |  __/\__ \
+//   |_| \__, | .__/ \___||___/
+//       |___/|_|
+//  FIGLET: Types
+
+#[derive(Debug)]
+struct VerifiedFn {
+    item: syn::ItemFn,
+}
+
+#[derive(Debug)]
+struct Logic {
+    clauses: Vec<Clause>,
+}
+
+#[derive(Debug)]
+struct Clause(syn::Expr);
+
+struct ImplPredicate(Op);
+
 #[derive(Clone, Debug)]
 enum Op {
     Op {
@@ -296,7 +321,12 @@ enum Op {
     Path(syn::Path),
 }
 
-struct ImplPredicate(Op);
+//  _____         _
+// |_   _|__  ___| |_ ___
+//   | |/ _ \/ __| __/ __|
+//   | |  __/\__ \ |_\__ \
+//   |_|\___||___/\__|___/
+//  FIGLET: Tests
 
 #[cfg(test)]
 mod tests {
