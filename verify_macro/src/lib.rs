@@ -274,10 +274,10 @@ impl TryFrom<Clause> for Op {
             expression!(Not, expr) => Ok(op!(Not, expr)),
             expression!(Eq, left, right) => Ok(op!(Same, left, right)),
             expression!(And, left, right) => Ok(op!(And, left, right)),
-            expression!(BitAnd, left, right) => Ok(op!(And, left, right)),
+            expression!(BitAnd, left, right) => Ok(op!(BitAnd, left, right)),
             expression!(Or, left, right) => Ok(op!(Or, left, right)),
-            expression!(BitOr, left, right) => Ok(op!(Or, left, right)),
-            expression!(BitXor, left, right) => Ok(op!(Xor, left, right)),
+            expression!(BitOr, left, right) => Ok(op!(BitOr, left, right)),
+            expression!(BitXor, left, right) => Ok(op!(BitXor, left, right)),
             syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok(Clause(*expr).try_into()?),
             unsupported_expr => Err(syn::Error::new(
                 unsupported_expr.span(),
@@ -445,8 +445,8 @@ mod tests {
                 where
                     A: And<B, Output = True>,
                     A: And<B>,
-                    A: And<B, Output = True>,
-                    A: And<B>,
+                    A: BitAnd<B, Output = True>,
+                    A: BitAnd<B>,
                 {
                 }
             },
@@ -471,8 +471,8 @@ mod tests {
                 where
                     A: Or<B, Output = True>,
                     A: Or<B>,
-                    A: Or<B, Output = True>,
-                    A: Or<B>,
+                    A: BitOr<B, Output = True>,
+                    A: BitOr<B>,
                 {
                 }
             },
@@ -495,8 +495,8 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    A: Xor<B, Output = True>,
-                    A: Xor<B>,
+                    A: BitXor<B, Output = True>,
+                    A: BitXor<B>,
                 {
                 }
             },

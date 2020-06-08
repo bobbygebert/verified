@@ -1,4 +1,4 @@
-pub use std::ops::Not;
+pub use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 mod internal {
     pub trait Choice<A, B> {}
@@ -11,9 +11,6 @@ pub trait And<Rhs: Bool> {
     type Output: Bool;
 }
 pub trait Or<Rhs: Bool> {
-    type Output: Bool;
-}
-pub trait Xor<Rhs: Bool> {
     type Output: Bool;
 }
 
@@ -53,19 +50,6 @@ impl Or<True> for True {
     type Output = True;
 }
 
-impl Xor<False> for False {
-    type Output = False;
-}
-impl Xor<False> for True {
-    type Output = True;
-}
-impl Xor<True> for False {
-    type Output = True;
-}
-impl Xor<True> for True {
-    type Output = False;
-}
-
 impl From<True> for bool {
     fn from(_: True) -> Self {
         true
@@ -100,21 +84,21 @@ impl std::convert::TryFrom<bool> for False {
     }
 }
 
-impl<Rhs: Bool> std::ops::BitAnd<Rhs> for False {
+impl<Rhs: Bool> BitAnd<Rhs> for False {
     type Output = Self;
     fn bitand(self, _: Rhs) -> Self::Output {
         Default::default()
     }
 }
 
-impl std::ops::BitAnd<False> for True {
+impl BitAnd<False> for True {
     type Output = False;
     fn bitand(self, _: Self::Output) -> Self::Output {
         Default::default()
     }
 }
 
-impl std::ops::BitAnd<True> for True {
+impl BitAnd<True> for True {
     type Output = Self;
     fn bitand(self, _: Self::Output) -> Self::Output {
         Default::default()
@@ -129,14 +113,14 @@ impl std::ops::BitAndAssign for True {
     fn bitand_assign(&mut self, _: Self) {}
 }
 
-impl<Rhs: Bool> std::ops::BitOr<Rhs> for False {
+impl<Rhs: Bool> BitOr<Rhs> for False {
     type Output = Rhs;
     fn bitor(self, _: Rhs) -> Self::Output {
         Default::default()
     }
 }
 
-impl<Rhs: Bool> std::ops::BitOr<Rhs> for True {
+impl<Rhs: Bool> BitOr<Rhs> for True {
     type Output = Self;
     fn bitor(self, _: Rhs) -> Self::Output {
         Default::default()
@@ -151,21 +135,21 @@ impl std::ops::BitOrAssign for True {
     fn bitor_assign(&mut self, _: Self) {}
 }
 
-impl<Rhs: Bool> std::ops::BitXor<Rhs> for False {
+impl<Rhs: Bool> BitXor<Rhs> for False {
     type Output = Rhs;
     fn bitxor(self, _: Rhs) -> Self::Output {
         Default::default()
     }
 }
 
-impl std::ops::BitXor<False> for True {
+impl BitXor<False> for True {
     type Output = Self;
     fn bitxor(self, _: False) -> Self::Output {
         Default::default()
     }
 }
 
-impl std::ops::BitXor<True> for True {
+impl BitXor<True> for True {
     type Output = False;
     fn bitxor(self, _: Self) -> Self::Output {
         Default::default()
@@ -554,22 +538,22 @@ mod tests {
 
     #[test]
     fn False_Xor_False_is_False() {
-        assert!(is_false::<<False as Xor<False>>::Output>());
+        assert!(is_false::<<False as BitXor<False>>::Output>());
     }
 
     #[test]
     fn False_Xor_True_is_True() {
-        assert!(is_true::<<False as Xor<True>>::Output>());
+        assert!(is_true::<<False as BitXor<True>>::Output>());
     }
 
     #[test]
     fn True_Xor_False_is_True() {
-        assert!(is_true::<<True as Xor<False>>::Output>());
+        assert!(is_true::<<True as BitXor<False>>::Output>());
     }
 
     #[test]
     fn True_Xor_True_is_False() {
-        assert!(is_false::<<True as Xor<True>>::Output>());
+        assert!(is_false::<<True as BitXor<True>>::Output>());
     }
 
     #[test]
@@ -579,7 +563,7 @@ mod tests {
         >());
         assert!(is_false::<<<True as Or<True>>::Output as And<False>>::Output>());
         assert!(is_false::<
-            <<True as Xor<False>>::Output as And<False>>::Output,
+            <<True as BitXor<False>>::Output as And<False>>::Output,
         >());
     }
 
@@ -591,10 +575,14 @@ mod tests {
         assert!(is_false::<
             <<False as Or<False>>::Output as And<True>>::Output,
         >());
-        assert!(is_false::<<<True as Xor<True>>::Output as And<True>>::Output>());
+        assert!(is_false::<
+            <<True as BitXor<True>>::Output as And<True>>::Output,
+        >());
         assert!(is_true::<<<True as And<True>>::Output as And<True>>::Output>());
         assert!(is_true::<<<False as Or<True>>::Output as And<True>>::Output>());
-        assert!(is_true::<<<True as Xor<False>>::Output as And<True>>::Output>());
+        assert!(is_true::<
+            <<True as BitXor<False>>::Output as And<True>>::Output,
+        >());
     }
 
     #[test]
@@ -604,7 +592,7 @@ mod tests {
         >());
         assert!(is_false::<<False as And<<True as Or<True>>::Output>>::Output>());
         assert!(is_false::<
-            <False as And<<True as Xor<False>>::Output>>::Output,
+            <False as And<<True as BitXor<False>>::Output>>::Output,
         >());
     }
 
@@ -616,9 +604,13 @@ mod tests {
         assert!(is_false::<
             <True as And<<False as Or<False>>::Output>>::Output,
         >());
-        assert!(is_false::<<True as And<<True as Xor<True>>::Output>>::Output>());
+        assert!(is_false::<
+            <True as And<<True as BitXor<True>>::Output>>::Output,
+        >());
         assert!(is_true::<<True as And<<True as And<True>>::Output>>::Output>());
         assert!(is_true::<<True as And<<False as Or<True>>::Output>>::Output>());
-        assert!(is_true::<<True as And<<True as Xor<False>>::Output>>::Output>());
+        assert!(is_true::<
+            <True as And<<True as BitXor<False>>::Output>>::Output,
+        >());
     }
 }
