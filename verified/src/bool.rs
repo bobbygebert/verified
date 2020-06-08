@@ -1,10 +1,12 @@
+pub use std::ops::Not;
+
 mod internal {
     pub trait Choice<A, B> {}
     impl Choice<super::False, super::True> for super::True {}
     impl Choice<super::False, super::True> for super::False {}
 }
 
-pub trait Bool: internal::Choice<False, True> + Default + std::ops::Not {}
+pub trait Bool: internal::Choice<False, True> + Default + Not {}
 pub trait And<Rhs: Bool> {
     type Output: Bool;
 }
@@ -228,14 +230,14 @@ impl std::hash::Hash for True {
     }
 }
 
-impl std::ops::Not for False {
+impl Not for False {
     type Output = True;
     fn not(self) -> Self::Output {
         Default::default()
     }
 }
 
-impl std::ops::Not for True {
+impl Not for True {
     type Output = False;
     fn not(self) -> Self::Output {
         Default::default()

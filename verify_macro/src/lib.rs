@@ -248,46 +248,35 @@ impl TryFrom<Op> for syn::Type {
     }
 }
 
+macro_rules! op {
+    ($op:ident, $arg:ident) => {
+        Op::Op {
+            op: syn::parse_quote!($op),
+            left: Box::new(Clause(*$arg).try_into()?),
+            right: None,
+        }
+    };
+    ($op:ident, $left:ident, $right:ident) => {
+        Op::Op {
+            op: syn::parse_quote!($op),
+            left: Box::new(Clause(*$left).try_into()?),
+            right: Some(Box::new(Clause(*$right).try_into()?)),
+        }
+    };
+}
+
 impl TryFrom<Clause> for Op {
     type Error = syn::Error;
     fn try_from(clause: Clause) -> syn::Result<Self> {
         match clause.0 {
             expression!(path) => Ok(Op::Path(path)),
-            expression!(Not, expr) => Ok(Op::Op {
-                op: syn::parse_quote!(std::ops::Not),
-                left: Box::new(Clause(*expr).try_into()?),
-                right: None,
-            }),
-            expression!(Eq, left, right) => Ok(Op::Op {
-                op: syn::parse_quote!(Same),
-                left: Box::new(Clause(*left).try_into()?),
-                right: Some(Box::new(Clause(*right).try_into()?)),
-            }),
-            expression!(And, left, right) => Ok(Op::Op {
-                op: syn::parse_quote!(And),
-                left: Box::new(Clause(*left).try_into()?),
-                right: Some(Box::new(Clause(*right).try_into()?)),
-            }),
-            expression!(BitAnd, left, right) => Ok(Op::Op {
-                op: syn::parse_quote!(And),
-                left: Box::new(Clause(*left).try_into()?),
-                right: Some(Box::new(Clause(*right).try_into()?)),
-            }),
-            expression!(Or, left, right) => Ok(Op::Op {
-                op: syn::parse_quote!(Or),
-                left: Box::new(Clause(*left).try_into()?),
-                right: Some(Box::new(Clause(*right).try_into()?)),
-            }),
-            expression!(BitOr, left, right) => Ok(Op::Op {
-                op: syn::parse_quote!(Or),
-                left: Box::new(Clause(*left).try_into()?),
-                right: Some(Box::new(Clause(*right).try_into()?)),
-            }),
-            expression!(BitXor, left, right) => Ok(Op::Op {
-                op: syn::parse_quote!(Xor),
-                left: Box::new(Clause(*left).try_into()?),
-                right: Some(Box::new(Clause(*right).try_into()?)),
-            }),
+            expression!(Not, expr) => Ok(op!(Not, expr)),
+            expression!(Eq, left, right) => Ok(op!(Same, left, right)),
+            expression!(And, left, right) => Ok(op!(And, left, right)),
+            expression!(BitAnd, left, right) => Ok(op!(And, left, right)),
+            expression!(Or, left, right) => Ok(op!(Or, left, right)),
+            expression!(BitOr, left, right) => Ok(op!(Or, left, right)),
+            expression!(BitXor, left, right) => Ok(op!(Xor, left, right)),
             syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok(Clause(*expr).try_into()?),
             unsupported_expr => Err(syn::Error::new(
                 unsupported_expr.span(),
@@ -501,8 +490,8 @@ mod tests {
             {
                 fn f<B: Bool>()
                 where
-                    B: std::ops::Not<Output = True>,
-                    B: std::ops::Not,
+                    B: Not<Output = True>,
+                    B: Not,
                 {
                 }
             },
@@ -525,8 +514,8 @@ mod tests {
             {
                 fn f<B: Bool>()
                 where
-                    B: std::ops::Not<Output = True>,
-                    B: std::ops::Not,
+                    B: Not<Output = True>,
+                    B: Not,
                 {
                 }
             },
@@ -549,8 +538,8 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    <A as And<B>>::Output: std::ops::Not<Output = True>,
-                    <A as And<B>>::Output: std::ops::Not,
+                    <A as And<B>>::Output: Not<Output = True>,
+                    <A as And<B>>::Output: Not,
                     A: And<B>
                 {
                 }
