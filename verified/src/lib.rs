@@ -1,5 +1,7 @@
 pub mod bool;
+pub mod usize;
 pub use crate::bool::*;
+pub use crate::usize::{Usize, B0, B1, T, U};
 pub use verify_macro::verify;
 
 pub struct ForAll;

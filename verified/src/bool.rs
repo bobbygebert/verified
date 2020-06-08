@@ -1,18 +1,12 @@
-pub use std::ops::{BitAnd, BitOr, BitXor, Not};
-
 mod internal {
-    pub trait Choice<A, B> {}
-    impl Choice<super::False, super::True> for super::True {}
-    impl Choice<super::False, super::True> for super::False {}
+    pub trait Choice {}
+    impl Choice for super::True {}
+    impl Choice for super::False {}
+    impl Choice for crate::usize::B1 {}
+    impl Choice for crate::usize::B0 {}
 }
 
-pub trait Bool: internal::Choice<False, True> + Default + Not {}
-pub trait And<Rhs: Bool> {
-    type Output: Bool;
-}
-pub trait Or<Rhs: Bool> {
-    type Output: Bool;
-}
+pub trait Bool: internal::Choice + Default + Not {}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct True;
@@ -22,235 +16,251 @@ impl Bool for True {}
 pub struct False;
 impl Bool for False {}
 
-impl And<False> for False {
-    type Output = False;
-}
+#[macro_export]
+macro_rules! impl_bool_ops {
+    ($false:ident, $true:ident) => {
+        pub use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-impl And<False> for True {
-    type Output = False;
-}
-impl And<True> for False {
-    type Output = False;
-}
-
-impl And<True> for True {
-    type Output = True;
-}
-
-impl Or<False> for False {
-    type Output = False;
-}
-impl Or<False> for True {
-    type Output = True;
-}
-impl Or<True> for False {
-    type Output = True;
-}
-impl Or<True> for True {
-    type Output = True;
-}
-
-impl From<True> for bool {
-    fn from(_: True) -> Self {
-        true
-    }
-}
-
-impl From<False> for bool {
-    fn from(_: False) -> Self {
-        false
-    }
-}
-
-impl std::convert::TryFrom<bool> for True {
-    type Error = &'static str;
-    fn try_from(maybe_true: bool) -> Result<Self, Self::Error> {
-        if maybe_true {
-            Ok(Self)
-        } else {
-            Err("cannot convert false into True")
+        pub trait And<Rhs: Bool> {
+            type Output: Bool;
         }
-    }
-}
-
-impl std::convert::TryFrom<bool> for False {
-    type Error = &'static str;
-    fn try_from(maybe_false: bool) -> Result<Self, Self::Error> {
-        if !maybe_false {
-            Ok(Self)
-        } else {
-            Err("cannot convert true into False")
+        pub trait Or<Rhs: Bool> {
+            type Output: Bool;
         }
-    }
+
+        impl And<$false> for $false {
+            type Output = $false;
+        }
+
+        impl And<$false> for $true {
+            type Output = $false;
+        }
+        impl And<$true> for $false {
+            type Output = $false;
+        }
+
+        impl And<$true> for $true {
+            type Output = $true;
+        }
+
+        impl Or<$false> for $false {
+            type Output = $false;
+        }
+        impl Or<$false> for $true {
+            type Output = $true;
+        }
+        impl Or<$true> for $false {
+            type Output = $true;
+        }
+        impl Or<$true> for $true {
+            type Output = $true;
+        }
+
+        impl From<$true> for bool {
+            fn from(_: $true) -> Self {
+                true
+            }
+        }
+
+        impl From<$false> for bool {
+            fn from(_: $false) -> Self {
+                false
+            }
+        }
+
+        impl std::convert::TryFrom<bool> for $true {
+            type Error = &'static str;
+            fn try_from(maybe_true: bool) -> Result<Self, Self::Error> {
+                if maybe_true {
+                    Ok(Self)
+                } else {
+                    Err("cannot convert false into True")
+                }
+            }
+        }
+
+        impl std::convert::TryFrom<bool> for $false {
+            type Error = &'static str;
+            fn try_from(maybe_false: bool) -> Result<Self, Self::Error> {
+                if !maybe_false {
+                    Ok(Self)
+                } else {
+                    Err("cannot convert true into False")
+                }
+            }
+        }
+
+        impl<Rhs: Bool> BitAnd<Rhs> for $false {
+            type Output = Self;
+            fn bitand(self, _: Rhs) -> Self::Output {
+                Default::default()
+            }
+        }
+
+        impl BitAnd<$false> for $true {
+            type Output = $false;
+            fn bitand(self, _: Self::Output) -> Self::Output {
+                Default::default()
+            }
+        }
+
+        impl BitAnd<$true> for $true {
+            type Output = Self;
+            fn bitand(self, _: Self::Output) -> Self::Output {
+                Default::default()
+            }
+        }
+
+        impl std::ops::BitAndAssign for $false {
+            fn bitand_assign(&mut self, _: Self) {}
+        }
+
+        impl std::ops::BitAndAssign for $true {
+            fn bitand_assign(&mut self, _: Self) {}
+        }
+
+        impl<Rhs: Bool> BitOr<Rhs> for $false {
+            type Output = Rhs;
+            fn bitor(self, _: Rhs) -> Self::Output {
+                Default::default()
+            }
+        }
+
+        impl<Rhs: Bool> BitOr<Rhs> for $true {
+            type Output = Self;
+            fn bitor(self, _: Rhs) -> Self::Output {
+                Default::default()
+            }
+        }
+
+        impl std::ops::BitOrAssign for $false {
+            fn bitor_assign(&mut self, _: Self) {}
+        }
+
+        impl std::ops::BitOrAssign for $true {
+            fn bitor_assign(&mut self, _: Self) {}
+        }
+
+        impl<Rhs: Bool> BitXor<Rhs> for $false {
+            type Output = Rhs;
+            fn bitxor(self, _: Rhs) -> Self::Output {
+                Default::default()
+            }
+        }
+
+        impl BitXor<$false> for $true {
+            type Output = Self;
+            fn bitxor(self, _: $false) -> Self::Output {
+                Default::default()
+            }
+        }
+
+        impl BitXor<$true> for $true {
+            type Output = $false;
+            fn bitxor(self, _: Self) -> Self::Output {
+                Default::default()
+            }
+        }
+
+        impl std::ops::BitXorAssign<$false> for $false {
+            fn bitxor_assign(&mut self, _: Self) {}
+        }
+
+        impl PartialEq<$true> for $false {
+            fn eq(&self, _: &$true) -> bool {
+                false
+            }
+        }
+
+        impl PartialEq<$false> for $true {
+            fn eq(&self, _: &$false) -> bool {
+                false
+            }
+        }
+
+        impl std::fmt::Display for $false {
+            fn fmt(&self, out: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(out, "false")
+            }
+        }
+
+        impl std::fmt::Display for $true {
+            fn fmt(&self, out: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(out, "true")
+            }
+        }
+
+        impl std::str::FromStr for $false {
+            type Err = String;
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                let value = s.parse::<bool>().map_err(|e| format!("{}", e))?;
+                std::convert::TryInto::<$false>::try_into(value).map_err(ToString::to_string)
+            }
+        }
+
+        impl std::str::FromStr for $true {
+            type Err = String;
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                let value = s.parse::<bool>().map_err(|e| format!("{}", e))?;
+                std::convert::TryInto::<$true>::try_into(value).map_err(ToString::to_string)
+            }
+        }
+
+        impl std::hash::Hash for $false {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                let value: bool = (*self).into();
+                value.hash(state)
+            }
+        }
+
+        impl std::hash::Hash for $true {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                let value: bool = (*self).into();
+                value.hash(state)
+            }
+        }
+
+        impl Not for $false {
+            type Output = $true;
+            fn not(self) -> Self::Output {
+                Default::default()
+            }
+        }
+
+        impl Not for $true {
+            type Output = $false;
+            fn not(self) -> Self::Output {
+                Default::default()
+            }
+        }
+
+        impl<Rhs: Bool> PartialOrd<Rhs> for $false
+        where
+            Self: PartialEq<Rhs>,
+            Rhs: Into<bool> + Copy,
+        {
+            fn partial_cmp(&self, rhs: &Rhs) -> Option<std::cmp::Ordering> {
+                let lhs: bool = (*self).into();
+                let rhs: bool = (*rhs).into();
+                lhs.partial_cmp(&rhs)
+            }
+        }
+
+        impl<Rhs: Bool> PartialOrd<Rhs> for $true
+        where
+            Self: PartialEq<Rhs>,
+            Rhs: Into<bool> + Copy,
+        {
+            fn partial_cmp(&self, rhs: &Rhs) -> Option<std::cmp::Ordering> {
+                let lhs: bool = (*self).into();
+                let rhs: bool = (*rhs).into();
+                lhs.partial_cmp(&rhs)
+            }
+        }
+    };
 }
 
-impl<Rhs: Bool> BitAnd<Rhs> for False {
-    type Output = Self;
-    fn bitand(self, _: Rhs) -> Self::Output {
-        Default::default()
-    }
-}
-
-impl BitAnd<False> for True {
-    type Output = False;
-    fn bitand(self, _: Self::Output) -> Self::Output {
-        Default::default()
-    }
-}
-
-impl BitAnd<True> for True {
-    type Output = Self;
-    fn bitand(self, _: Self::Output) -> Self::Output {
-        Default::default()
-    }
-}
-
-impl std::ops::BitAndAssign for False {
-    fn bitand_assign(&mut self, _: Self) {}
-}
-
-impl std::ops::BitAndAssign for True {
-    fn bitand_assign(&mut self, _: Self) {}
-}
-
-impl<Rhs: Bool> BitOr<Rhs> for False {
-    type Output = Rhs;
-    fn bitor(self, _: Rhs) -> Self::Output {
-        Default::default()
-    }
-}
-
-impl<Rhs: Bool> BitOr<Rhs> for True {
-    type Output = Self;
-    fn bitor(self, _: Rhs) -> Self::Output {
-        Default::default()
-    }
-}
-
-impl std::ops::BitOrAssign for False {
-    fn bitor_assign(&mut self, _: Self) {}
-}
-
-impl std::ops::BitOrAssign for True {
-    fn bitor_assign(&mut self, _: Self) {}
-}
-
-impl<Rhs: Bool> BitXor<Rhs> for False {
-    type Output = Rhs;
-    fn bitxor(self, _: Rhs) -> Self::Output {
-        Default::default()
-    }
-}
-
-impl BitXor<False> for True {
-    type Output = Self;
-    fn bitxor(self, _: False) -> Self::Output {
-        Default::default()
-    }
-}
-
-impl BitXor<True> for True {
-    type Output = False;
-    fn bitxor(self, _: Self) -> Self::Output {
-        Default::default()
-    }
-}
-
-impl std::ops::BitXorAssign<False> for False {
-    fn bitxor_assign(&mut self, _: Self) {}
-}
-
-impl PartialEq<True> for False {
-    fn eq(&self, _: &True) -> bool {
-        false
-    }
-}
-
-impl PartialEq<False> for True {
-    fn eq(&self, _: &False) -> bool {
-        false
-    }
-}
-
-impl std::fmt::Display for False {
-    fn fmt(&self, out: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(out, "false")
-    }
-}
-
-impl std::fmt::Display for True {
-    fn fmt(&self, out: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(out, "true")
-    }
-}
-
-impl std::str::FromStr for False {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value = s.parse::<bool>().map_err(|e| format!("{}", e))?;
-        std::convert::TryInto::<False>::try_into(value).map_err(ToString::to_string)
-    }
-}
-
-impl std::str::FromStr for True {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value = s.parse::<bool>().map_err(|e| format!("{}", e))?;
-        std::convert::TryInto::<True>::try_into(value).map_err(ToString::to_string)
-    }
-}
-
-impl std::hash::Hash for False {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let value: bool = (*self).into();
-        value.hash(state)
-    }
-}
-
-impl std::hash::Hash for True {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let value: bool = (*self).into();
-        value.hash(state)
-    }
-}
-
-impl Not for False {
-    type Output = True;
-    fn not(self) -> Self::Output {
-        Default::default()
-    }
-}
-
-impl Not for True {
-    type Output = False;
-    fn not(self) -> Self::Output {
-        Default::default()
-    }
-}
-
-impl<Rhs: Bool> PartialOrd<Rhs> for False
-where
-    Self: PartialEq<Rhs>,
-    Rhs: Into<bool> + Copy,
-{
-    fn partial_cmp(&self, rhs: &Rhs) -> Option<std::cmp::Ordering> {
-        let lhs: bool = (*self).into();
-        let rhs: bool = (*rhs).into();
-        lhs.partial_cmp(&rhs)
-    }
-}
-
-impl<Rhs: Bool> PartialOrd<Rhs> for True
-where
-    Self: PartialEq<Rhs>,
-    Rhs: Into<bool> + Copy,
-{
-    fn partial_cmp(&self, rhs: &Rhs) -> Option<std::cmp::Ordering> {
-        let lhs: bool = (*self).into();
-        let rhs: bool = (*rhs).into();
-        lhs.partial_cmp(&rhs)
-    }
-}
+impl_bool_ops!(False, True);
 
 #[cfg(test)]
 #[allow(non_snake_case)]

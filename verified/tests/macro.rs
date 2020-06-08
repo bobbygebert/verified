@@ -116,6 +116,43 @@ fn can_verify_nested_unary_clause() {
 }
 
 #[test]
+fn can_verify_usize_bitand_clauses() {
+    #[verify]
+    fn f<A: Usize, B: Usize, C: Usize>()
+    where
+        _: Verify<{ (A & B) == C }>,
+    {
+    }
+    f::<U<T, B1>, U<T, B0>, U<T, B0>>();
+    f::<U<T, B1>, U<T, B1>, U<T, B1>>();
+}
+
+#[test]
+fn can_verify_usize_bitor_clauses() {
+    #[verify]
+    fn f<A: Usize, B: Usize, C: Usize>()
+    where
+        _: Verify<{ (A | B) == C }>,
+    {
+    }
+    f::<U<T, B1>, U<T, B0>, U<T, B1>>();
+    f::<U<T, B0>, U<T, B0>, U<T, B0>>();
+}
+
+#[test]
+fn can_verify_usize_bitxor_clauses() {
+    #[verify]
+    fn f<A: Usize, B: Usize, C: Usize>()
+    where
+        _: Verify<{ (A ^ B) == C }>,
+    {
+    }
+    f::<U<T, B1>, U<T, B0>, U<T, B1>>();
+    f::<U<T, B0>, U<T, B0>, U<T, B0>>();
+    f::<U<T, B1>, U<T, B1>, U<T, B0>>();
+}
+
+#[test]
 #[ignore] // TODO: figure out how to make this test pass in automation.
 #[allow(non_snake_case)]
 fn compilation_tests() {
