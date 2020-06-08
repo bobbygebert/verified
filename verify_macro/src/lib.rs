@@ -541,7 +541,7 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    _: Verify<{ !(A && B ) }>,
+                    _: Verify<{ !(A && B) }>,
                 {
                 }
             },
