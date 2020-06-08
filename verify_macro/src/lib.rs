@@ -131,28 +131,80 @@ impl syn::parse::Parse for Clause {
     }
 }
 
+macro_rules! expression {
+    ($path:ident) => {
+        syn::Expr::Path(syn::ExprPath {
+            $path,
+            ..
+        })
+    };
+    ($expr_ty:ident, $expr:ident) => {
+        syn::Expr::Unary(syn::ExprUnary {
+            op: syn::UnOp::$expr_ty(_),
+            $expr,
+            ..
+        })
+    };
+    ($expr_ty:ident, $left:ident, $right:ident) => {
+        syn::Expr::Binary(syn::ExprBinary {
+            $left,
+            op: syn::BinOp::$expr_ty(_),
+            $right,
+            ..
+        })
+    }
+}
+macro_rules! predicate {
+    ({$($left:tt)*}: {$($right:tt)*}) => {
+        syn::PredicateType {
+            bounded_ty: syn::parse_quote! { $($left)* },
+            bounds: syn::parse_quote! { $($right)* },
+            lifetimes: Default::default(),
+            colon_token: Default::default(),
+        }
+    };
+}
 impl TryFrom<Clause> for Vec<syn::PredicateType> {
     type Error = syn::Error;
     fn try_from(clause: Clause) -> syn::Result<Self> {
+        clause.try_into().map(|p| vec![p])
+    }
+}
+impl TryFrom<Clause> for syn::PredicateType {
+    type Error = syn::Error;
+    fn try_from(clause: Clause) -> syn::Result<Self> {
+        let op: Op = clause.try_into()?;
+        Ok(match op {
+            Op {
+                op,
+                left,
+                right: Some(right),
+            } => predicate! {{ #left }: { #op<#right, Output = True> }},
+            Op {
+                op,
+                left,
+                right: None,
+            } => predicate! {{ #left }: { #op<Output = True> }},
+        })
+    }
+}
+
+impl TryFrom<Clause> for Op {
+    type Error = syn::Error;
+    fn try_from(clause: Clause) -> syn::Result<Self> {
         match clause.0 {
-            syn::Expr::Path(syn::ExprPath { path, .. }) => Ok(vec![syn::PredicateType {
-                bounded_ty: syn::parse_quote! { #path },
-                bounds: syn::parse_quote! { Same<True> },
-                lifetimes: Default::default(),
-                colon_token: Default::default(),
-            }]),
-            syn::Expr::Unary(syn::ExprUnary {
-                op: syn::UnOp::Not(_),
-                expr,
-                ..
-            }) => {
+            expression!(path) => Ok(Op {
+                op: syn::parse_quote!(Same),
+                left: syn::parse_quote!(#path),
+                right: Some(syn::parse_quote!(True)),
+            }),
+            expression!(Not, expr) => {
                 if let syn::Expr::Path(syn::ExprPath { path, .. }) = *expr {
-                    Ok(vec![syn::PredicateType {
-                        bounded_ty: syn::parse_quote! { <#path as std::ops::Not>::Output },
-                        bounds: syn::parse_quote! { Same<True> },
-                        lifetimes: Default::default(),
-                        colon_token: Default::default(),
-                    }])
+                    Ok(Op {
+                        op: syn::parse_quote!(std::ops::Not),
+                        left: syn::parse_quote!(#path),
+                        right: None,
+                    })
                 } else {
                     Err(syn::Error::new(
                         expr.span(),
@@ -160,72 +212,36 @@ impl TryFrom<Clause> for Vec<syn::PredicateType> {
                     ))
                 }
             }
-            syn::Expr::Binary(syn::ExprBinary {
-                left,
-                op: syn::BinOp::Eq(_),
-                right,
-                ..
-            }) => Ok(vec![syn::PredicateType {
-                bounded_ty: syn::parse_quote! { #left },
-                bounds: syn::parse_quote! { Same<#right> },
-                lifetimes: Default::default(),
-                colon_token: Default::default(),
-            }]),
-            syn::Expr::Binary(syn::ExprBinary {
-                left,
-                op: syn::BinOp::And(_),
-                right,
-                ..
-            }) => Ok(vec![syn::PredicateType {
-                bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
-                bounds: syn::parse_quote! { And },
-                lifetimes: Default::default(),
-                colon_token: Default::default(),
-            }]),
-            syn::Expr::Binary(syn::ExprBinary {
-                left,
-                op: syn::BinOp::BitAnd(_),
-                right,
-                ..
-            }) => Ok(vec![syn::PredicateType {
-                bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
-                bounds: syn::parse_quote! { And },
-                lifetimes: Default::default(),
-                colon_token: Default::default(),
-            }]),
-            syn::Expr::Binary(syn::ExprBinary {
-                left,
-                op: syn::BinOp::Or(_),
-                right,
-                ..
-            }) => Ok(vec![syn::PredicateType {
-                bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
-                bounds: syn::parse_quote! { Or },
-                lifetimes: Default::default(),
-                colon_token: Default::default(),
-            }]),
-            syn::Expr::Binary(syn::ExprBinary {
-                left,
-                op: syn::BinOp::BitOr(_),
-                right,
-                ..
-            }) => Ok(vec![syn::PredicateType {
-                bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
-                bounds: syn::parse_quote! { Or },
-                lifetimes: Default::default(),
-                colon_token: Default::default(),
-            }]),
-            syn::Expr::Binary(syn::ExprBinary {
-                left,
-                op: syn::BinOp::BitXor(_),
-                right,
-                ..
-            }) => Ok(vec![syn::PredicateType {
-                bounded_ty: syn::parse_quote! { BinOp<#left, #right> },
-                bounds: syn::parse_quote! { Xor },
-                lifetimes: Default::default(),
-                colon_token: Default::default(),
-            }]),
+            expression!(Eq, left, right) => Ok(Op {
+                op: syn::parse_quote!(Same),
+                left: syn::parse_quote!(#left),
+                right: Some(syn::parse_quote!(#right)),
+            }),
+            expression!(And, left, right) => Ok(Op {
+                op: syn::parse_quote!(And),
+                left: syn::parse_quote!(#left),
+                right: Some(syn::parse_quote!(#right)),
+            }),
+            expression!(BitAnd, left, right) => Ok(Op {
+                op: syn::parse_quote!(And),
+                left: syn::parse_quote!(#left),
+                right: Some(syn::parse_quote!(#right)),
+            }),
+            expression!(Or, left, right) => Ok(Op {
+                op: syn::parse_quote!(Or),
+                left: syn::parse_quote!(#left),
+                right: Some(syn::parse_quote!(#right)),
+            }),
+            expression!(BitOr, left, right) => Ok(Op {
+                op: syn::parse_quote!(Or),
+                left: syn::parse_quote!(#left),
+                right: Some(syn::parse_quote!(#right)),
+            }),
+            expression!(BitXor, left, right) => Ok(Op {
+                op: syn::parse_quote!(Xor),
+                left: syn::parse_quote!(#left),
+                right: Some(syn::parse_quote!(#right)),
+            }),
             syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok(Clause(*expr).try_into()?),
             unsupported_expr => Err(syn::Error::new(
                 unsupported_expr.span(),
@@ -233,6 +249,13 @@ impl TryFrom<Clause> for Vec<syn::PredicateType> {
             )),
         }
     }
+}
+
+#[derive(Debug)]
+struct Op {
+    op: syn::Path,
+    left: syn::Type,
+    right: Option<syn::Type>,
 }
 
 #[cfg(test)]
@@ -280,7 +303,7 @@ mod tests {
             {
                 fn f<B: Bool>()
                 where
-                    B: Same<True>
+                    B: Same<True, Output = True>
                 {
                 }
             },
@@ -303,8 +326,8 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    A: Same<True>,
-                    B: Same<True>
+                    A: Same<True, Output = True>,
+                    B: Same<True, Output = True>
                 {
                 }
             },
@@ -327,7 +350,7 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    A: Same<B>,
+                    A: Same<B, Output = True>,
                 {
                 }
             },
@@ -350,8 +373,8 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    BinOp<A, B>: And,
-                    BinOp<A, B>: And,
+                    A: And<B, Output = True>,
+                    A: And<B, Output = True>,
                 {
                 }
             },
@@ -374,8 +397,8 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    BinOp<A, B>: Or,
-                    BinOp<A, B>: Or,
+                    A: Or<B, Output = True>,
+                    A: Or<B, Output = True>,
                 {
                 }
             },
@@ -398,7 +421,7 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool>()
                 where
-                    BinOp<A, B>: Xor,
+                    A: Xor<B, Output = True>,
                 {
                 }
             },
@@ -421,7 +444,7 @@ mod tests {
             {
                 fn f<B: Bool>()
                 where
-                    <B as std::ops::Not>::Output: Same<True>,
+                    B: std::ops::Not<Output = True>,
                 {
                 }
             },
@@ -444,7 +467,7 @@ mod tests {
             {
                 fn f<B: Bool>()
                 where
-                    <B as std::ops::Not>::Output: Same<True>,
+                    B: std::ops::Not<Output = True>,
                 {
                 }
             },

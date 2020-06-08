@@ -2,16 +2,18 @@ mod internal {
     pub trait Choice<A, B> {}
     impl Choice<super::False, super::True> for super::True {}
     impl Choice<super::False, super::True> for super::False {}
-    impl<Lhs: super::Bool, Rhs: super::Bool> Choice<super::False, super::True>
-        for super::BinOp<Lhs, Rhs>
-    {
-    }
 }
 
 pub trait Bool: internal::Choice<False, True> + Default + std::ops::Not {}
-pub trait And: Bool {}
-pub trait Or: Bool {}
-pub trait Xor: Bool {}
+pub trait And<Rhs: Bool> {
+    type Output: Bool;
+}
+pub trait Or<Rhs: Bool> {
+    type Output: Bool;
+}
+pub trait Xor<Rhs: Bool> {
+    type Output: Bool;
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct True;
@@ -21,30 +23,46 @@ impl Bool for True {}
 pub struct False;
 impl Bool for False {}
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct BinOp<Lhs: Bool + std::ops::Not, Rhs: Bool + std::ops::Not>(Lhs, Rhs);
-impl<Lhs: Bool + std::ops::Not, Rhs: Bool + std::ops::Not> std::ops::Not for BinOp<Lhs, Rhs>
-where
-    <Lhs as std::ops::Not>::Output: Bool,
-    <Rhs as std::ops::Not>::Output: Bool,
-{
-    type Output = BinOp<<Lhs as std::ops::Not>::Output, <Rhs as std::ops::Not>::Output>;
-    fn not(self) -> Self::Output {
-        Default::default()
-    }
+impl And<False> for False {
+    type Output = False;
 }
-impl<Lhs: Bool + std::ops::Not, Rhs: Bool + std::ops::Not> Bool for BinOp<Lhs, Rhs>
-where
-    <Lhs as std::ops::Not>::Output: Bool,
-    <Rhs as std::ops::Not>::Output: Bool,
-{
+
+impl And<False> for True {
+    type Output = False;
 }
-impl And for BinOp<True, True> {}
-impl Or for BinOp<True, True> {}
-impl Or for BinOp<True, False> {}
-impl Or for BinOp<False, True> {}
-impl Xor for BinOp<False, True> {}
-impl Xor for BinOp<True, False> {}
+impl And<True> for False {
+    type Output = False;
+}
+
+impl And<True> for True {
+    type Output = True;
+}
+
+impl Or<False> for False {
+    type Output = False;
+}
+impl Or<False> for True {
+    type Output = True;
+}
+impl Or<True> for False {
+    type Output = True;
+}
+impl Or<True> for True {
+    type Output = True;
+}
+
+impl Xor<False> for False {
+    type Output = False;
+}
+impl Xor<False> for True {
+    type Output = True;
+}
+impl Xor<True> for False {
+    type Output = True;
+}
+impl Xor<True> for True {
+    type Output = False;
+}
 
 impl From<True> for bool {
     fn from(_: True) -> Self {
@@ -252,7 +270,17 @@ where
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::Same;
+
     use std::convert::TryFrom;
+
+    fn is_true<B: Bool + Same<True>>() -> bool {
+        true
+    }
+
+    fn is_false<B: Bool + Same<False>>() -> bool {
+        true
+    }
 
     #[test]
     fn True_and_False_are_Bools() {
@@ -483,44 +511,112 @@ mod tests {
     }
 
     #[test]
-    #[rustfmt::skip]
-    fn And_is_implemented_for_True_True() {
-        fn and_is_implemented<Op: And>(_: Op) -> bool { true }
-        assert!(and_is_implemented(BinOp(True, True)));
+    fn False_And_False_is_False() {
+        assert!(is_false::<<False as And<False>>::Output>());
     }
 
     #[test]
-    #[rustfmt::skip]
-    fn Or_is_implemented_for_True_True() {
-        fn or_is_implemented<Op: Or>(_: Op) -> bool { true }
-        assert!(or_is_implemented(BinOp(True, True)));
+    fn False_And_True_is_False() {
+        assert!(is_false::<<False as And<True>>::Output>());
     }
 
     #[test]
-    #[rustfmt::skip]
-    fn Or_is_implemented_for_True_False() {
-        fn or_is_implemented<Op: Or>(_: Op) -> bool { true }
-        assert!(or_is_implemented(BinOp(True, False)));
+    fn True_And_False_is_False() {
+        assert!(is_false::<<True as And<False>>::Output>());
     }
 
     #[test]
-    #[rustfmt::skip]
-    fn Or_is_implemented_for_False_True() {
-        fn or_is_implemented<Op: Or>(_: Op) -> bool { true }
-        assert!(or_is_implemented(BinOp(False, True)));
+    fn True_And_True_is_True() {
+        assert!(is_true::<<True as And<True>>::Output>());
     }
 
     #[test]
-    #[rustfmt::skip]
-    fn Xor_is_implemented_for_False_True() {
-        fn xor_is_implemented<Op: Xor>(_: Op) -> bool { true }
-        assert!(xor_is_implemented(BinOp(False, True)));
+    fn False_Or_False_is_False() {
+        assert!(is_false::<<False as Or<False>>::Output>());
     }
 
     #[test]
-    #[rustfmt::skip]
-    fn Xor_is_implemented_for_True_False() {
-        fn xor_is_implemented<Op: Xor>(_: Op) -> bool { true }
-        assert!(xor_is_implemented(BinOp(True, False)));
+    fn False_Or_True_is_True() {
+        assert!(is_true::<<False as Or<True>>::Output>());
+    }
+
+    #[test]
+    fn True_Or_False_is_True() {
+        assert!(is_true::<<True as Or<False>>::Output>());
+    }
+
+    #[test]
+    fn True_Or_True_is_True() {
+        assert!(is_true::<<True as Or<True>>::Output>());
+    }
+
+    #[test]
+    fn False_Xor_False_is_False() {
+        assert!(is_false::<<False as Xor<False>>::Output>());
+    }
+
+    #[test]
+    fn False_Xor_True_is_True() {
+        assert!(is_true::<<False as Xor<True>>::Output>());
+    }
+
+    #[test]
+    fn True_Xor_False_is_True() {
+        assert!(is_true::<<True as Xor<False>>::Output>());
+    }
+
+    #[test]
+    fn True_Xor_True_is_False() {
+        assert!(is_false::<<True as Xor<True>>::Output>());
+    }
+
+    #[test]
+    fn expr_And_False_is_False() {
+        assert!(is_false::<
+            <<True as And<True>>::Output as And<False>>::Output,
+        >());
+        assert!(is_false::<<<True as Or<True>>::Output as And<False>>::Output>());
+        assert!(is_false::<
+            <<True as Xor<False>>::Output as And<False>>::Output,
+        >());
+    }
+
+    #[test]
+    fn expr_And_True_is_expr() {
+        assert!(is_false::<
+            <<True as And<False>>::Output as And<True>>::Output,
+        >());
+        assert!(is_false::<
+            <<False as Or<False>>::Output as And<True>>::Output,
+        >());
+        assert!(is_false::<<<True as Xor<True>>::Output as And<True>>::Output>());
+        assert!(is_true::<<<True as And<True>>::Output as And<True>>::Output>());
+        assert!(is_true::<<<False as Or<True>>::Output as And<True>>::Output>());
+        assert!(is_true::<<<True as Xor<False>>::Output as And<True>>::Output>());
+    }
+
+    #[test]
+    fn False_and_expr_is_False() {
+        assert!(is_false::<
+            <False as And<<True as And<True>>::Output>>::Output,
+        >());
+        assert!(is_false::<<False as And<<True as Or<True>>::Output>>::Output>());
+        assert!(is_false::<
+            <False as And<<True as Xor<False>>::Output>>::Output,
+        >());
+    }
+
+    #[test]
+    fn True_And_expr_is_expr() {
+        assert!(is_false::<
+            <True as And<<True as And<False>>::Output>>::Output,
+        >());
+        assert!(is_false::<
+            <True as And<<False as Or<False>>::Output>>::Output,
+        >());
+        assert!(is_false::<<True as And<<True as Xor<True>>::Output>>::Output>());
+        assert!(is_true::<<True as And<<True as And<True>>::Output>>::Output>());
+        assert!(is_true::<<True as And<<False as Or<True>>::Output>>::Output>());
+        assert!(is_true::<<True as And<<True as Xor<False>>::Output>>::Output>());
     }
 }

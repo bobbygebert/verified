@@ -4,8 +4,12 @@ pub use verify_macro::verify;
 
 pub struct ForAll;
 
-pub trait Same<T> {}
-impl<T> Same<T> for T {}
+pub trait Same<Rhs> {
+    type Output: Bool;
+}
+impl<Rhs> Same<Rhs> for Rhs {
+    type Output = True;
+}
 
 #[cfg(test)]
 mod tests {
