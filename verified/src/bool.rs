@@ -1,3 +1,5 @@
+use crate::Same;
+
 mod internal {
     pub trait Choice {}
     impl Choice for super::True {}
@@ -6,7 +8,7 @@ mod internal {
     impl Choice for crate::usize::B0 {}
 }
 
-pub trait Bool: internal::Choice + Default + Not {}
+pub trait Bool: internal::Choice + Default + Not + std::convert::Into<bool> {}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct True;
@@ -16,43 +18,57 @@ impl Bool for True {}
 pub struct False;
 impl Bool for False {}
 
+impl Same<False> for False {
+    type Output = True;
+}
+impl Same<False> for True {
+    type Output = False;
+}
+impl Same<True> for False {
+    type Output = False;
+}
+impl Same<True> for True {
+    type Output = True;
+}
+
+pub trait And<Rhs: Bool> {
+    type Output: Bool;
+}
+
+pub trait Or<Rhs: Bool> {
+    type Output: Bool;
+}
+
 #[macro_export]
 macro_rules! impl_bool_ops {
     ($false:ident, $true:ident) => {
         pub use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-        pub trait And<Rhs: Bool> {
-            type Output: Bool;
-        }
-        pub trait Or<Rhs: Bool> {
-            type Output: Bool;
-        }
-
-        impl And<$false> for $false {
+        impl crate::bool::And<$false> for $false {
             type Output = $false;
         }
 
-        impl And<$false> for $true {
+        impl crate::bool::And<$false> for $true {
             type Output = $false;
         }
-        impl And<$true> for $false {
+        impl crate::bool::And<$true> for $false {
             type Output = $false;
         }
 
-        impl And<$true> for $true {
+        impl crate::bool::And<$true> for $true {
             type Output = $true;
         }
 
-        impl Or<$false> for $false {
+        impl crate::bool::Or<$false> for $false {
             type Output = $false;
         }
-        impl Or<$false> for $true {
+        impl crate::bool::Or<$false> for $true {
             type Output = $true;
         }
-        impl Or<$true> for $false {
+        impl crate::bool::Or<$true> for $false {
             type Output = $true;
         }
-        impl Or<$true> for $true {
+        impl crate::bool::Or<$true> for $true {
             type Output = $true;
         }
 
@@ -508,42 +524,42 @@ mod tests {
 
     #[test]
     fn False_And_False_is_False() {
-        assert!(is_false::<<False as And<False>>::Output>());
+        assert!(is_false::<<False as crate::bool::And<False>>::Output>());
     }
 
     #[test]
     fn False_And_True_is_False() {
-        assert!(is_false::<<False as And<True>>::Output>());
+        assert!(is_false::<<False as crate::bool::And<True>>::Output>());
     }
 
     #[test]
     fn True_And_False_is_False() {
-        assert!(is_false::<<True as And<False>>::Output>());
+        assert!(is_false::<<True as crate::bool::And<False>>::Output>());
     }
 
     #[test]
     fn True_And_True_is_True() {
-        assert!(is_true::<<True as And<True>>::Output>());
+        assert!(is_true::<<True as crate::bool::And<True>>::Output>());
     }
 
     #[test]
     fn False_Or_False_is_False() {
-        assert!(is_false::<<False as Or<False>>::Output>());
+        assert!(is_false::<<False as crate::bool::Or<False>>::Output>());
     }
 
     #[test]
     fn False_Or_True_is_True() {
-        assert!(is_true::<<False as Or<True>>::Output>());
+        assert!(is_true::<<False as crate::bool::Or<True>>::Output>());
     }
 
     #[test]
     fn True_Or_False_is_True() {
-        assert!(is_true::<<True as Or<False>>::Output>());
+        assert!(is_true::<<True as crate::bool::Or<False>>::Output>());
     }
 
     #[test]
     fn True_Or_True_is_True() {
-        assert!(is_true::<<True as Or<True>>::Output>());
+        assert!(is_true::<<True as crate::bool::Or<True>>::Output>());
     }
 
     #[test]
@@ -569,58 +585,70 @@ mod tests {
     #[test]
     fn expr_And_False_is_False() {
         assert!(is_false::<
-            <<True as And<True>>::Output as And<False>>::Output,
+            <<True as crate::bool::And<True>>::Output as crate::bool::And<False>>::Output,
         >());
-        assert!(is_false::<<<True as Or<True>>::Output as And<False>>::Output>());
         assert!(is_false::<
-            <<True as BitXor<False>>::Output as And<False>>::Output,
+            <<True as crate::bool::Or<True>>::Output as crate::bool::And<False>>::Output,
+        >());
+        assert!(is_false::<
+            <<True as BitXor<False>>::Output as crate::bool::And<False>>::Output,
         >());
     }
 
     #[test]
     fn expr_And_True_is_expr() {
         assert!(is_false::<
-            <<True as And<False>>::Output as And<True>>::Output,
+            <<True as crate::bool::And<False>>::Output as crate::bool::And<True>>::Output,
         >());
         assert!(is_false::<
-            <<False as Or<False>>::Output as And<True>>::Output,
+            <<False as crate::bool::Or<False>>::Output as crate::bool::And<True>>::Output,
         >());
         assert!(is_false::<
-            <<True as BitXor<True>>::Output as And<True>>::Output,
+            <<True as BitXor<True>>::Output as crate::bool::And<True>>::Output,
         >());
-        assert!(is_true::<<<True as And<True>>::Output as And<True>>::Output>());
-        assert!(is_true::<<<False as Or<True>>::Output as And<True>>::Output>());
         assert!(is_true::<
-            <<True as BitXor<False>>::Output as And<True>>::Output,
+            <<True as crate::bool::And<True>>::Output as crate::bool::And<True>>::Output,
+        >());
+        assert!(is_true::<
+            <<False as crate::bool::Or<True>>::Output as crate::bool::And<True>>::Output,
+        >());
+        assert!(is_true::<
+            <<True as BitXor<False>>::Output as crate::bool::And<True>>::Output,
         >());
     }
 
     #[test]
     fn False_and_expr_is_False() {
         assert!(is_false::<
-            <False as And<<True as And<True>>::Output>>::Output,
+            <False as crate::bool::And<<True as crate::bool::And<True>>::Output>>::Output,
         >());
-        assert!(is_false::<<False as And<<True as Or<True>>::Output>>::Output>());
         assert!(is_false::<
-            <False as And<<True as BitXor<False>>::Output>>::Output,
+            <False as crate::bool::And<<True as crate::bool::Or<True>>::Output>>::Output,
+        >());
+        assert!(is_false::<
+            <False as crate::bool::And<<True as BitXor<False>>::Output>>::Output,
         >());
     }
 
     #[test]
     fn True_And_expr_is_expr() {
         assert!(is_false::<
-            <True as And<<True as And<False>>::Output>>::Output,
+            <True as crate::bool::And<<True as crate::bool::And<False>>::Output>>::Output,
         >());
         assert!(is_false::<
-            <True as And<<False as Or<False>>::Output>>::Output,
+            <True as crate::bool::And<<False as crate::bool::Or<False>>::Output>>::Output,
         >());
         assert!(is_false::<
-            <True as And<<True as BitXor<True>>::Output>>::Output,
+            <True as crate::bool::And<<True as BitXor<True>>::Output>>::Output,
         >());
-        assert!(is_true::<<True as And<<True as And<True>>::Output>>::Output>());
-        assert!(is_true::<<True as And<<False as Or<True>>::Output>>::Output>());
         assert!(is_true::<
-            <True as And<<True as BitXor<False>>::Output>>::Output,
+            <True as crate::bool::And<<True as crate::bool::And<True>>::Output>>::Output,
+        >());
+        assert!(is_true::<
+            <True as crate::bool::And<<False as crate::bool::Or<True>>::Output>>::Output,
+        >());
+        assert!(is_true::<
+            <True as crate::bool::And<<True as BitXor<False>>::Output>>::Output,
         >());
     }
 }

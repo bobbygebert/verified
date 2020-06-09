@@ -116,6 +116,17 @@ fn can_verify_nested_unary_clause() {
 }
 
 #[test]
+fn can_verify_bool_not_equal_clauses() {
+    #[verify]
+    fn f<A: Bool, B: Bool>()
+    where
+        _: Verify<{ A != B }>,
+    {
+    }
+    f::<True, False>();
+}
+
+#[test]
 fn can_verify_usize_bitand_clauses() {
     #[verify]
     fn f<A: Usize, B: Usize, C: Usize>()
@@ -186,6 +197,63 @@ fn can_verify_usize_addition_clauses() {
 }
 
 #[test]
+fn can_verify_usize_less_than_clauses() {
+    #[verify]
+    fn f<A: Usize, B: Usize>()
+    where
+        _: Verify<{ A < B }>,
+    {
+    }
+    f::<U<U<T, B1>, B0>, U<U<T, B1>, B1>>();
+}
+
+#[test]
+fn can_verify_usize_greater_than_clauses() {
+    #[verify]
+    fn f<A: Usize, B: Usize>()
+    where
+        _: Verify<{ A > B }>,
+    {
+    }
+    f::<U<U<T, B1>, B1>, U<U<T, B1>, B0>>();
+}
+
+#[test]
+fn can_verify_usize_less_equal_clauses() {
+    #[verify]
+    fn f<A: Usize, B: Usize>()
+    where
+        _: Verify<{ A <= B }>,
+    {
+    }
+    f::<U<U<T, B1>, B0>, U<U<T, B1>, B1>>();
+    f::<U<U<T, B1>, B1>, U<U<T, B1>, B1>>();
+}
+
+#[test]
+fn can_verify_usize_greater_equal_clauses() {
+    #[verify]
+    fn f<A: Usize, B: Usize>()
+    where
+        _: Verify<{ A >= B }>,
+    {
+    }
+    f::<U<U<T, B1>, B1>, U<U<T, B1>, B0>>();
+    f::<U<U<T, B1>, B1>, U<U<T, B1>, B1>>();
+}
+
+#[test]
+fn can_verify_usize_not_equal_clauses() {
+    #[verify]
+    fn f<A: Usize, B: Usize>()
+    where
+        _: Verify<{ A != B }>,
+    {
+    }
+    f::<U<U<T, B1>, B1>, U<U<T, B1>, B0>>();
+}
+
+#[test]
 #[ignore] // TODO: figure out how to make this test pass in automation.
 #[allow(non_snake_case)]
 fn compilation_tests() {
@@ -204,8 +272,8 @@ fn compilation_tests() {
     )
     .and_expect(
         "
-        error[E0277]: the trait bound `verified::bool::False: verified::Same<verified::bool::True>` is not satisfied
-         --> $DIR/False_is_not_true.rs:9:9
+        error[E0271]: type mismatch resolving `<verified::bool::False as verified::Same<verified::bool::True>>::Output == verified::bool::True`
+         --> $DIR/False_is_not_true.rs:9:5
           |
         3 |     #[verify]
           |     --------- required by this bound in `main::f`
@@ -213,7 +281,7 @@ fn compilation_tests() {
           |        -
         ...
         9 |     f::<False>();
-          |         ^^^^^ the trait `verified::Same<verified::bool::True>` is not implemented for `verified::bool::False`
+          |     ^^^^^^^^^^ expected struct `verified::bool::True`, found struct `verified::bool::False`
         "
     );
 

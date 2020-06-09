@@ -276,16 +276,21 @@ impl TryFrom<Clause> for Op {
     type Error = syn::Error;
     fn try_from(clause: Clause) -> syn::Result<Self> {
         match clause.0 {
-            expression!(lit: lit) => Ok(lit.try_into()?),
-            expression!(path: path) => Ok(Op::Path(path)),
-            expression!(Not, expr) => Ok(op!(Not, expr)),
-            expression!(Eq, left, right) => Ok(op!(Same, left, right)),
+            expression!(Add, left, right) => Ok(op!(Add, left, right)),
             expression!(And, left, right) => Ok(op!(And, left, right)),
             expression!(BitAnd, left, right) => Ok(op!(BitAnd, left, right)),
-            expression!(Or, left, right) => Ok(op!(Or, left, right)),
             expression!(BitOr, left, right) => Ok(op!(BitOr, left, right)),
             expression!(BitXor, left, right) => Ok(op!(BitXor, left, right)),
-            expression!(Add, left, right) => Ok(op!(Add, left, right)),
+            expression!(Eq, left, right) => Ok(op!(Same, left, right)),
+            expression!(Ge, left, right) => Ok(op!(Ge, left, right)),
+            expression!(Gt, left, right) => Ok(op!(Gt, left, right)),
+            expression!(Le, left, right) => Ok(op!(Le, left, right)),
+            expression!(Lt, left, right) => Ok(op!(Lt, left, right)),
+            expression!(Ne, left, right) => Ok(op!(Ne, left, right)),
+            expression!(Not, expr) => Ok(op!(Not, expr)),
+            expression!(Or, left, right) => Ok(op!(Or, left, right)),
+            expression!(lit: lit) => Ok(lit.try_into()?),
+            expression!(path: path) => Ok(Op::Path(path)),
             syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok(Clause(*expr).try_into()?),
             unsupported_expr => Err(syn::Error::new(
                 unsupported_expr.span(),
@@ -697,6 +702,121 @@ mod tests {
                     <A as Add<B>>::Output: Same<U<U<T, B1>, B1>, Output = True>,
                     <A as Add<B>>::Output: Same<U<U<T, B1>, B1>>,
                     A: Add<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_less_than_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    _: Verify<{ A < B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    A: Lt<B, Output = True>,
+                    A: Lt<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_greater_than_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    _: Verify<{ A > B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    A: Gt<B, Output = True>,
+                    A: Gt<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_less_equal_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    _: Verify<{ A <= B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    A: Le<B, Output = True>,
+                    A: Le<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_greater_equal_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    _: Verify<{ A >= B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    A: Ge<B, Output = True>,
+                    A: Ge<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_not_equal_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    _: Verify<{ A != B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    A: Ne<B, Output = True>,
+                    A: Ne<B>,
                 {
                 }
             },

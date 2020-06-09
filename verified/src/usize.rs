@@ -1,10 +1,11 @@
-use crate::bool::Bool;
+use crate::bool::{Bool, False, Or, True};
+use crate::Same;
 pub use std::ops::Add;
 
 mod internal {
     use std::ops::BitAnd;
 
-    pub trait Bit: Default + BitAnd {}
+    pub trait Bit: Default + BitAnd + super::Compare<Self> + super::Same<Self> {}
     impl Bit for super::B0 {}
     impl Bit for super::B1 {}
 
@@ -14,7 +15,7 @@ mod internal {
 }
 use internal::*;
 
-pub trait Usize: Nat {}
+pub trait Usize: Nat + Compare<Self> + Same<Self> {}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct B0;
@@ -32,20 +33,192 @@ impl Usize for T {}
 pub trait NotT {}
 impl<Msb: Usize, Lsb: Bit> NotT for U<Msb, Lsb> {}
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct U<Msb: Usize, Lsb: Bit>(Msb, Lsb);
-impl<Msb: Usize, Lsb: Bit> Usize for U<Msb, Lsb> {}
-
-pub trait Normalize: Usize {
-    type Output: Usize;
+impl<Msb: Usize, Lsb: Bit> Usize for U<Msb, Lsb> where
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>
+{
 }
 
-impl Normalize for T {
-    type Output = Self;
+pub trait Ordering: Into<std::cmp::Ordering> + Default + Same<Equal> {}
+#[derive(Default)]
+pub struct Less;
+impl Ordering for Less {}
+impl Same<Less> for Less {
+    type Output = True;
+}
+impl Same<Equal> for Less {
+    type Output = False;
+}
+impl Same<Greater> for Less {
+    type Output = False;
+}
+impl From<Less> for std::cmp::Ordering {
+    fn from(_from: Less) -> Self {
+        std::cmp::Ordering::Less
+    }
+}
+pub trait Lt<Rhs> {
+    type Output: Bool;
+}
+impl<Lhs: NotCompare + Usize, Rhs: NotCompare + Usize> Lt<Rhs> for Lhs
+where
+    Lhs: Compare<Rhs>,
+    <Lhs as Compare<Rhs>>::Output: Ordering + Same<Less>,
+{
+    type Output = <<Lhs as Compare<Rhs>>::Output as Same<Less>>::Output;
+}
+pub trait Le<Rhs> {
+    type Output: Bool;
+}
+impl<Lhs: NotCompare + Usize, Rhs: NotCompare + Usize> Le<Rhs> for Lhs
+where
+    Lhs: Compare<Rhs>,
+    <Lhs as Compare<Rhs>>::Output: Ordering + Same<Less> + Same<Equal>,
+    <<Lhs as Compare<Rhs>>::Output as Same<Less>>::Output:
+        Or<<<Lhs as Compare<Rhs>>::Output as Same<Equal>>::Output>,
+{
+    type Output = <<<Lhs as Compare<Rhs>>::Output as Same<Less>>::Output as Or<
+        <<Lhs as Compare<Rhs>>::Output as Same<Equal>>::Output,
+    >>::Output;
 }
 
-impl Normalize for U<T, B0> {
-    type Output = Self;
+#[derive(Default)]
+pub struct Equal;
+impl Ordering for Equal {}
+impl Same<Less> for Equal {
+    type Output = False;
+}
+impl Same<Equal> for Equal {
+    type Output = True;
+}
+impl Same<Greater> for Equal {
+    type Output = False;
+}
+impl From<Equal> for std::cmp::Ordering {
+    fn from(_from: Equal) -> Self {
+        std::cmp::Ordering::Equal
+    }
+}
+
+#[derive(Default)]
+pub struct Greater;
+impl Ordering for Greater {}
+impl Same<Less> for Greater {
+    type Output = False;
+}
+impl Same<Equal> for Greater {
+    type Output = False;
+}
+impl Same<Greater> for Greater {
+    type Output = True;
+}
+impl From<Greater> for std::cmp::Ordering {
+    fn from(_from: Greater) -> Self {
+        std::cmp::Ordering::Greater
+    }
+}
+pub trait Gt<Rhs> {
+    type Output: Bool;
+}
+impl<Lhs: NotCompare + Usize, Rhs: NotCompare + Usize> Gt<Rhs> for Lhs
+where
+    Lhs: Compare<Rhs>,
+    <Lhs as Compare<Rhs>>::Output: Ordering + Same<Greater>,
+{
+    type Output = <<Lhs as Compare<Rhs>>::Output as Same<Greater>>::Output;
+}
+pub trait Ge<Rhs> {
+    type Output: Bool;
+}
+impl<Lhs: NotCompare + Usize, Rhs: NotCompare + Usize> Ge<Rhs> for Lhs
+where
+    Lhs: Compare<Rhs>,
+    <Lhs as Compare<Rhs>>::Output: Ordering + Same<Greater> + Same<Equal>,
+    <<Lhs as Compare<Rhs>>::Output as Same<Greater>>::Output:
+        Or<<<Lhs as Compare<Rhs>>::Output as Same<Equal>>::Output>,
+{
+    type Output = <<<Lhs as Compare<Rhs>>::Output as Same<Greater>>::Output as Or<
+        <<Lhs as Compare<Rhs>>::Output as Same<Equal>>::Output,
+    >>::Output;
+}
+
+pub trait Compare<Rhs> {
+    type Output: Ordering;
+}
+impl<LsbOrdering> Compare<LsbOrdering> for Less {
+    type Output = Less;
+}
+impl<LsbOrdering: Ordering> Compare<LsbOrdering> for Equal {
+    type Output = LsbOrdering;
+}
+impl<LsbOrdering> Compare<LsbOrdering> for Greater {
+    type Output = Greater;
+}
+
+impl Compare<T> for T {
+    type Output = Equal;
+}
+impl Compare<B0> for B0 {
+    type Output = Equal;
+}
+impl Compare<B0> for B1 {
+    type Output = Greater;
+}
+impl Compare<B1> for B0 {
+    type Output = Less;
+}
+impl Compare<B1> for B1 {
+    type Output = Equal;
+}
+impl<LhsMsb: Usize, LhsLsb: Bit> Compare<T> for U<LhsMsb, LhsLsb> {
+    type Output = Greater;
+}
+impl<LhsMsb: Usize, LhsLsb: Bit> Compare<U<LhsMsb, LhsLsb>> for T {
+    type Output = Less;
+}
+impl<LhsMsb: Usize, LhsLsb: Bit, RhsMsb: Usize, RhsLsb: Bit> Compare<U<RhsMsb, RhsLsb>>
+    for U<LhsMsb, LhsLsb>
+where
+    LhsMsb: Compare<RhsMsb>,
+    LhsLsb: Compare<RhsLsb>,
+    <LhsMsb as Compare<RhsMsb>>::Output: Ordering,
+    <LhsLsb as Compare<RhsLsb>>::Output: Ordering,
+    <LhsMsb as Compare<RhsMsb>>::Output: Compare<<LhsLsb as Compare<RhsLsb>>::Output>,
+{
+    type Output = <<LhsMsb as Compare<RhsMsb>>::Output as Compare<
+        <LhsLsb as Compare<RhsLsb>>::Output,
+    >>::Output;
+}
+impl<LhsMsb: Usize, LhsLsb: Bit, RhsMsb: Usize, RhsLsb: Bit> PartialOrd<U<RhsMsb, RhsLsb>>
+    for U<LhsMsb, LhsLsb>
+where
+    U<LhsMsb, LhsLsb>: Compare<U<RhsMsb, RhsLsb>>,
+    U<LhsMsb, LhsLsb>: PartialEq<U<RhsMsb, RhsLsb>>,
+{
+    fn partial_cmp(&self, _other: &U<RhsMsb, RhsLsb>) -> Option<std::cmp::Ordering> {
+        Some(<Self as Compare<U<RhsMsb, RhsLsb>>>::Output::default().into())
+    }
+}
+
+pub trait NotCompare {}
+impl<T: Usize> NotCompare for T {}
+impl NotCompare for B0 {}
+impl NotCompare for B1 {}
+impl<Lhs: NotCompare, Rhs: NotCompare> Same<Rhs> for Lhs
+where
+    Lhs: Compare<Rhs>,
+{
+    type Output = <<Lhs as Compare<Rhs>>::Output as Same<Equal>>::Output;
+}
+impl<LhsMsb: Usize, LhsLsb: Bit, RhsMsb: Usize, RhsLsb: Bit> PartialEq<U<RhsMsb, RhsLsb>>
+    for U<LhsMsb, LhsLsb>
+where
+    U<LhsMsb, LhsLsb>: Same<U<RhsMsb, RhsLsb>>,
+{
+    fn eq(&self, _other: &U<RhsMsb, RhsLsb>) -> bool {
+        <Self as Same<U<RhsMsb, RhsLsb>>>::Output::default().into()
+    }
 }
 
 impl BitAnd<T> for T {
@@ -468,5 +641,63 @@ mod tests {
         assert_eq!(U(U(T, B1), B1) + U(T, B1), U(U(U(T, B1), B0), B0));
         assert_eq!(U(T, B1) + U(U(T, B1), B1), U(U(U(T, B1), B0), B0));
         assert_eq!(U(U(U(T, B1), B0), B1) + U(T, B1), U(U(U(T, B1), B1), B0));
+    }
+
+    #[test]
+    fn one_is_equal_to_one() {
+        assert_eq!(U(T, B1), U(T, B1));
+    }
+
+    #[test]
+    fn zero_is_equal_to_zero() {
+        assert_eq!(U(T, B0), U(T, B0));
+    }
+
+    #[test]
+    fn one_is_not_equal_to_zero() {
+        assert_ne!(U(T, B1), U(T, B0));
+        assert_ne!(U(T, B0), U(T, B1));
+    }
+
+    #[test]
+    fn two_is_not_equal_to_zero() {
+        assert_ne!(U(U(T, B1), B0), U(T, B0));
+        assert_ne!(U(T, B0), U(U(T, B1), B0));
+    }
+
+    #[test]
+    fn two_is_equal_to_two() {
+        assert_eq!(U(U(T, B1), B0), U(U(T, B1), B0));
+    }
+
+    #[test]
+    fn zero_is_less_than_one() {
+        assert!(U(T, B0) < U(T, B1));
+        assert!(U(T, B1) > U(T, B0));
+    }
+
+    #[test]
+    fn zero_is_less_than_two() {
+        assert!(U(T, B0) < U(U(T, B1), B0));
+        assert!(U(U(T, B1), B0) > U(T, B0));
+    }
+
+    #[test]
+    fn one_is_less_than_two() {
+        assert!(U(T, B1) < U(U(T, B1), B0));
+        assert!(U(U(T, B1), B0) > U(T, B1));
+    }
+
+    #[test]
+    fn ordering_types_implement_same() {
+        assert_eq!(<Less as Same<Less>>::Output::default(), True);
+        assert_eq!(<Less as Same<Equal>>::Output::default(), False);
+        assert_eq!(<Less as Same<Greater>>::Output::default(), False);
+        assert_eq!(<Equal as Same<Less>>::Output::default(), False);
+        assert_eq!(<Equal as Same<Equal>>::Output::default(), True);
+        assert_eq!(<Equal as Same<Greater>>::Output::default(), False);
+        assert_eq!(<Greater as Same<Less>>::Output::default(), False);
+        assert_eq!(<Greater as Same<Equal>>::Output::default(), False);
+        assert_eq!(<Greater as Same<Greater>>::Output::default(), True);
     }
 }
