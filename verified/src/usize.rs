@@ -1,4 +1,5 @@
 use crate::bool::Bool;
+pub use std::ops::Add;
 
 mod internal {
     use std::ops::BitAnd;
@@ -11,7 +12,6 @@ mod internal {
     impl Nat for super::T {}
     impl<Msb: super::Usize, Lsb: Bit> Nat for super::U<Msb, Lsb> {}
 }
-
 use internal::*;
 
 pub trait Usize: Nat {}
@@ -258,6 +258,78 @@ where
     }
 }
 
+impl Add<T> for T {
+    type Output = T;
+    fn add(self, _other: T) -> Self::Output {
+        Default::default()
+    }
+}
+
+impl<LhsMsb, LhsLsb> Add<T> for U<LhsMsb, LhsLsb>
+where
+    LhsMsb: Usize,
+    LhsLsb: Bit,
+    U<LhsMsb, LhsLsb>: Usize,
+{
+    type Output = U<LhsMsb, LhsLsb>;
+    fn add(self, _other: T) -> Self::Output {
+        Default::default()
+    }
+}
+
+impl<LhsMsb, LhsLsb> Add<U<LhsMsb, LhsLsb>> for T
+where
+    LhsMsb: Usize,
+    LhsLsb: Bit,
+    U<LhsMsb, LhsLsb>: Usize,
+{
+    type Output = U<LhsMsb, LhsLsb>;
+    fn add(self, _other: U<LhsMsb, LhsLsb>) -> Self::Output {
+        Default::default()
+    }
+}
+
+impl<LhsMsb, LhsLsb, RhsMsb> Add<U<RhsMsb, B0>> for U<LhsMsb, LhsLsb>
+where
+    LhsMsb: Add<RhsMsb> + Usize,
+    <LhsMsb as Add<RhsMsb>>::Output: Usize,
+    LhsLsb: Bit,
+    RhsMsb: Usize,
+    U<LhsMsb, LhsLsb>: Usize,
+{
+    type Output = U<<LhsMsb as Add<RhsMsb>>::Output, LhsLsb>;
+    fn add(self, _other: U<RhsMsb, B0>) -> Self::Output {
+        Default::default()
+    }
+}
+
+impl<LhsMsb, RhsMsb> Add<U<RhsMsb, B1>> for U<LhsMsb, B0>
+where
+    LhsMsb: Add<RhsMsb> + Usize,
+    <LhsMsb as Add<RhsMsb>>::Output: Usize,
+    RhsMsb: Usize,
+{
+    type Output = U<<LhsMsb as Add<RhsMsb>>::Output, B1>;
+    fn add(self, _other: U<RhsMsb, B1>) -> Self::Output {
+        Default::default()
+    }
+}
+
+impl<LhsMsb, RhsMsb> Add<U<RhsMsb, B1>> for U<LhsMsb, B1>
+where
+    LhsMsb: Add<RhsMsb> + Usize,
+    <LhsMsb as Add<RhsMsb>>::Output: Usize,
+    <LhsMsb as Add<RhsMsb>>::Output: Add<U<T, B1>>,
+    <<LhsMsb as Add<RhsMsb>>::Output as Add<U<T, B1>>>::Output: Usize,
+    RhsMsb: Usize,
+    U<LhsMsb, B1>: Usize,
+{
+    type Output = U<<<LhsMsb as Add<RhsMsb>>::Output as Add<U<T, B1>>>::Output, B0>;
+    fn add(self, _other: U<RhsMsb, B1>) -> Self::Output {
+        Default::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,5 +445,28 @@ mod tests {
             U(U(U(T, B1), B0), B0) ^ U(U(U(U(T, B1), B1), B1), B1),
             U(U(U(U(T, B1), B0), B1), B1)
         );
+    }
+
+    #[test]
+    fn self_plus_zero_is_self() {
+        assert_eq!(U(T, B0) + U(T, B0), U(T, B0));
+        assert_eq!(U(T, B1) + U(T, B0), U(T, B1));
+        assert_eq!(U(T, B0) + U(T, B1), U(T, B1));
+        assert_eq!(U(U(T, B1), B0) + U(T, B0), U(U(T, B1), B0));
+        assert_eq!(U(T, B0) + U(U(T, B1), B0), U(U(T, B1), B0));
+        assert_eq!(U(U(T, B1), B1) + U(T, B0), U(U(T, B1), B1));
+        assert_eq!(U(T, B0) + U(U(T, B1), B1), U(U(T, B1), B1));
+    }
+
+    #[test]
+    fn one_plus_one_caries_bit_to_get_two() {
+        assert_eq!(U(T, B1) + U(T, B1), U(U(T, B1), B0));
+    }
+
+    #[test]
+    fn carry_bit_propogates() {
+        assert_eq!(U(U(T, B1), B1) + U(T, B1), U(U(U(T, B1), B0), B0));
+        assert_eq!(U(T, B1) + U(U(T, B1), B1), U(U(U(T, B1), B0), B0));
+        assert_eq!(U(U(U(T, B1), B0), B1) + U(T, B1), U(U(U(T, B1), B1), B0));
     }
 }

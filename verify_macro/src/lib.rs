@@ -285,6 +285,7 @@ impl TryFrom<Clause> for Op {
             expression!(Or, left, right) => Ok(op!(Or, left, right)),
             expression!(BitOr, left, right) => Ok(op!(BitOr, left, right)),
             expression!(BitXor, left, right) => Ok(op!(BitXor, left, right)),
+            expression!(Add, left, right) => Ok(op!(Add, left, right)),
             syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok(Clause(*expr).try_into()?),
             unsupported_expr => Err(syn::Error::new(
                 unsupported_expr.span(),
@@ -672,6 +673,30 @@ mod tests {
                     U<U<U<T, B1>, B1>, B0>: Same<Six>,
                     U<T, B0>: Same<Zero, Output = True>,
                     U<T, B0>: Same<Zero>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_addition_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    _: Verify<{ (A + B) == 3 }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Usize, B: Usize>()
+                where
+                    <A as Add<B>>::Output: Same<U<U<T, B1>, B1>, Output = True>,
+                    <A as Add<B>>::Output: Same<U<U<T, B1>, B1>>,
+                    A: Add<B>,
                 {
                 }
             },

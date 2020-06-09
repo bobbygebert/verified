@@ -175,6 +175,17 @@ fn can_verify_usize_literals() {
 }
 
 #[test]
+fn can_verify_usize_addition_clauses() {
+    #[verify]
+    fn f<A: Usize, B: Usize>()
+    where
+        _: Verify<{ (A + B) == 5 }>,
+    {
+    }
+    f::<U<U<T, B1>, B0>, U<U<T, B1>, B1>>();
+}
+
+#[test]
 #[ignore] // TODO: figure out how to make this test pass in automation.
 #[allow(non_snake_case)]
 fn compilation_tests() {
