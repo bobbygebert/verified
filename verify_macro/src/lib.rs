@@ -315,7 +315,7 @@ impl TryFrom<syn::Lit> for Op {
             })),
             unsupported_expr => Err(syn::Error::new(
                 unsupported_expr.span(),
-                "only bool and base10 literals are supported here",
+                "only bool and int literals are supported here",
             )),
         }
     }

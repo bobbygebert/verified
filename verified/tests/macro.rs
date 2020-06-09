@@ -318,19 +318,19 @@ fn compilation_tests() {
         "
         use verified::*;
         #[verify]
-        fn _f<U: Usize>()
+        fn _f<N: Usize>()
         where
-            _: Verify<{ U == 0xFF }>,
+            _: Verify<{ N == \"abc\" }>,
         {}
         ",
     )
     .and_expect(
         "
-        error: only bool and base10 literals are supported here
+        error: only bool and int literals are supported here
          --> $DIR/Error_on_unsupported_literal_in_clause.rs:6:26
           |
-        6 |         _: Verify<{ U == 0xFF }>,
-          |                          ^^^^
+        6 |         _: Verify<{ N == \"abc\" }>,
+          |                          ^^^^^
         ",
     );
 }
