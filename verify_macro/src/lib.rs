@@ -133,7 +133,13 @@ impl quote::ToTokens for VerifiedFn {
 //  FIGLET: Translations
 
 macro_rules! expression {
-    ($path:ident) => {
+    (lit: $lit:ident) => {
+        syn::Expr::Lit(syn::ExprLit {
+            $lit,
+            ..
+        })
+    };
+    (path: $path:ident) => {
         syn::Expr::Path(syn::ExprPath {
             $path,
             ..
@@ -270,7 +276,8 @@ impl TryFrom<Clause> for Op {
     type Error = syn::Error;
     fn try_from(clause: Clause) -> syn::Result<Self> {
         match clause.0 {
-            expression!(path) => Ok(Op::Path(path)),
+            expression!(lit: lit) => Ok(lit.try_into()?),
+            expression!(path: path) => Ok(Op::Path(path)),
             expression!(Not, expr) => Ok(op!(Not, expr)),
             expression!(Eq, left, right) => Ok(op!(Same, left, right)),
             expression!(And, left, right) => Ok(op!(And, left, right)),
@@ -282,6 +289,33 @@ impl TryFrom<Clause> for Op {
             unsupported_expr => Err(syn::Error::new(
                 unsupported_expr.span(),
                 "unsupported logical expression",
+            )),
+        }
+    }
+}
+
+impl TryFrom<syn::Lit> for Op {
+    type Error = syn::Error;
+    fn try_from(lit: syn::Lit) -> syn::Result<Self> {
+        match lit {
+            syn::Lit::Bool(syn::LitBool { value, .. }) => Ok(Op::Path(if value {
+                syn::parse_quote!(True)
+            } else {
+                syn::parse_quote!(False)
+            })),
+            syn::Lit::Int(value) => Ok(Op::Path(match value.base10_parse::<usize>()? {
+                0 => syn::parse_quote!(U<T, B0>),
+                int => format!("{:b}", int)
+                    .bytes()
+                    .skip_while(|bit| *bit == '0' as u8)
+                    .fold(syn::parse_quote!(T), |msb: syn::Path, bit| {
+                        let lsb = syn::Ident::new(&format!("B{}", bit as char), value.span());
+                        syn::parse_quote!(U<#msb, #lsb>)
+                    }),
+            })),
+            unsupported_expr => Err(syn::Error::new(
+                unsupported_expr.span(),
+                "only bool and base10 literals are supported here",
             )),
         }
     }
@@ -328,6 +362,7 @@ enum Op {
 //  FIGLET: Tests
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod tests {
     use super::*;
 
@@ -357,7 +392,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
     fn Bool_identity_clause_is_converted_bound_of_Same_True() {
         parse_test! {
             parse: VerifiedFn
@@ -380,7 +414,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
     fn Multiple_Bool_identity_clauses_are_converted_to_multiple_bounds() {
         parse_test! {
             parse: VerifiedFn
@@ -404,7 +437,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
     fn Bool_equality_clause_is_converted_to_Same_bound() {
         parse_test! {
             parse: VerifiedFn
@@ -428,7 +460,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
     fn Bool_and_clause_is_converted_to_And_bound_on_BinOp() {
         parse_test! {
             parse: VerifiedFn
@@ -454,7 +485,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
     fn Bool_or_clause_is_converted_to_Or_bound_on_BinOp() {
         parse_test! {
             parse: VerifiedFn
@@ -480,7 +510,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
     fn Bool_xor_clause_is_converted_to_Xor_bound_on_BinOp() {
         parse_test! {
             parse: VerifiedFn
@@ -504,7 +533,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
     fn Bool_not_clause_is_converted_to_Same_bound_on_BitXor_Output() {
         parse_test! {
             parse: VerifiedFn
@@ -528,7 +556,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
     fn parenthesized_Bool_clauses_are_unwrapped() {
         parse_test! {
             parse: VerifiedFn
@@ -552,7 +579,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
     fn unary_op_can_be_applied_to_nested_clause() {
         parse_test! {
             parse: VerifiedFn
@@ -577,7 +603,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
     fn binary_op_can_be_applied_to_nested_clause() {
         parse_test! {
             parse: VerifiedFn
@@ -596,6 +621,57 @@ mod tests {
                     <A as And<<B as Or<C>>::Output>>::Output: Same<C>,
                     A: And<<B as Or<C>>::Output>,
                     B: Or<C>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn bool_literals_converted_to_False_or_True() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<B: Bool>()
+                where
+                    _: Verify<{ false == !B }, { true == B }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<B: Bool>()
+                where
+                    False: Same<<B as Not>::Output, Output = True>,
+                    False: Same<<B as Not>::Output>,
+                    B: Not,
+                    True: Same<B, Output = True>,
+                    True: Same<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn usize_literals_converted_to_Usize_U_T_B1_B0() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<Six: Usize, Zero: Usize>()
+                where
+                    _: Verify<{ 6 == Six }, { 0 == Zero }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<Six: Usize, Zero: Usize>()
+                where
+                    U<U<U<T, B1>, B1>, B0>: Same<Six, Output = True>,
+                    U<U<U<T, B1>, B1>, B0>: Same<Six>,
+                    U<T, B0>: Same<Zero, Output = True>,
+                    U<T, B0>: Same<Zero>,
                 {
                 }
             },

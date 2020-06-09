@@ -153,6 +153,28 @@ fn can_verify_usize_bitxor_clauses() {
 }
 
 #[test]
+fn can_verify_bool_literals() {
+    #[verify]
+    fn f<B: Bool>()
+    where
+        _: Verify<{ B == false }, { B == !true }>,
+    {
+    }
+    f::<False>();
+}
+
+#[test]
+fn can_verify_usize_literals() {
+    #[verify]
+    fn f<Six: Usize, Zero: Usize>()
+    where
+        _: Verify<{ Six == 6 }, { Zero == 0 }>,
+    {
+    }
+    f::<U<U<U<T, B1>, B1>, B0>, U<T, B0>>();
+}
+
+#[test]
 #[ignore] // TODO: figure out how to make this test pass in automation.
 #[allow(non_snake_case)]
 fn compilation_tests() {
@@ -288,6 +310,27 @@ fn compilation_tests() {
           |
         6 |         _: Verify<{ A * B }>,
           |                     ^^^^^
+        ",
+    );
+
+    Compile(
+        "Error_on_unsupported_literal_in_clause.rs",
+        "
+        use verified::*;
+        #[verify]
+        fn _f<U: Usize>()
+        where
+            _: Verify<{ U == 0xFF }>,
+        {}
+        ",
+    )
+    .and_expect(
+        "
+        error: only bool and base10 literals are supported here
+         --> $DIR/Error_on_unsupported_literal_in_clause.rs:6:26
+          |
+        6 |         _: Verify<{ U == 0xFF }>,
+          |                          ^^^^
         ",
     );
 }
