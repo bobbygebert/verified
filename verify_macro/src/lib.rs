@@ -187,10 +187,10 @@ macro_rules! expression {
             ..
         })
     };
-    ($expr_ty:ident, $left:ident, $right:ident) => {
+    ($op:ident, $left:ident, $right:ident) => {
         syn::Expr::Binary(syn::ExprBinary {
             $left,
-            op: syn::BinOp::$expr_ty(_),
+            $op,
             $right,
             ..
         })
@@ -222,12 +222,10 @@ impl TryFrom<Clause> for Vec<syn::PredicateType> {
 impl TryFrom<ImplPredicate> for Vec<syn::PredicateType> {
     type Error = syn::Error;
     fn try_from(ImplPredicate(from): ImplPredicate) -> syn::Result<Self> {
+        let op_name = from.get_op_name();
         Ok(match from {
-            Op::Op {
-                op,
-                left,
-                right: Some(right),
-            } => {
+            Op::BinOp { left, right, .. } => {
+                let op = op_name?;
                 let left_ty: syn::Type = (*left.clone()).try_into()?;
                 let right_ty: syn::Type = (*right.clone()).try_into()?;
                 vec![predicate! {{ #left_ty }: { #op<#right_ty> }}]
@@ -236,11 +234,7 @@ impl TryFrom<ImplPredicate> for Vec<syn::PredicateType> {
                     .chain(TryInto::<Self>::try_into(ImplPredicate(*right))?.into_iter())
                     .collect()
             }
-            Op::Op {
-                op,
-                left,
-                right: None,
-            } => {
+            Op::UnOp { op, left } => {
                 let left_ty: syn::Type = (*left.clone()).try_into()?;
                 vec![predicate! {{ #left_ty }: { #op }}]
                     .into_iter()
@@ -255,16 +249,63 @@ impl TryFrom<ImplPredicate> for Vec<syn::PredicateType> {
 impl TryFrom<Op> for syn::PredicateType {
     type Error = syn::Error;
     fn try_from(from: Op) -> syn::Result<Self> {
+        let op_name = from.get_op_name();
         match from {
-            Op::Op { op, left, right } => {
-                let left: syn::Type = (*left).try_into()?;
-                Ok(match right {
-                    Some(right) => {
-                        let right: syn::Type = (*right).try_into()?;
-                        predicate! {{ #left }: { #op<#right, Output = True> }}
+            Op::BinOp {
+                op: syn::BinOp::Eq(_),
+                left,
+                right,
+            } => {
+                let op = op_name?;
+                let left_op = left.get_op_name();
+                let right_op = right.get_op_name();
+                match (*left, *right) {
+                    (
+                        Op::BinOp {
+                            left: left_left,
+                            right: left_right,
+                            ..
+                        },
+                        right,
+                    ) => {
+                        let left_op = left_op?;
+                        let left_left: syn::Type = (*left_left).try_into()?;
+                        let left_right: syn::Type = (*left_right).try_into()?;
+                        let right: syn::Type = (right).try_into()?;
+                        Ok(predicate! {{ #left_left }: { #left_op<#left_right, Output = #right> }})
                     }
-                    None => predicate! {{ #left }: { #op<Output = True> }},
-                })
+                    (
+                        left,
+                        Op::BinOp {
+                            left: right_left,
+                            right: right_right,
+                            ..
+                        },
+                    ) => {
+                        let right_op = right_op?;
+                        let right_left: syn::Type = (*right_left).try_into()?;
+                        let right_right: syn::Type = (*right_right).try_into()?;
+                        let left: syn::Type = (left).try_into()?;
+                        Ok(
+                            predicate! {{ #right_left }: { #right_op<#right_right, Output = #left> }},
+                        )
+                    }
+                    (left, right) => {
+                        let left: syn::Type = (left).try_into()?;
+                        let right: syn::Type = (right).try_into()?;
+                        Ok(predicate! {{ #left }: { #op<#right, Output = True> }})
+                    }
+                }
+            }
+            Op::BinOp { left, right, .. } => {
+                let op = op_name?;
+                let left: syn::Type = (*left).try_into()?;
+                let right: syn::Type = (*right).try_into()?;
+                Ok(predicate! {{ #left }: { #op<#right, Output = True> }})
+            }
+            Op::UnOp { op, left } => {
+                let left: syn::Type = (*left).try_into()?;
+                Ok(predicate! {{ #left }: { #op<Output = True> }})
             }
             Op::Path(path) => Ok(predicate! {{ #path }: { Same<True, Output = True> }}),
         }
@@ -274,16 +315,17 @@ impl TryFrom<Op> for syn::PredicateType {
 impl TryFrom<Op> for syn::Type {
     type Error = syn::Error;
     fn try_from(from: Op) -> syn::Result<Self> {
+        let op_name = from.get_op_name();
         match from {
-            Op::Op { op, left, right } => {
+            Op::BinOp { left, right, .. } => {
+                let op = op_name?;
                 let left: syn::Type = (*left).try_into()?;
-                Ok(match right {
-                    Some(right) => {
-                        let right: syn::Type = (*right).try_into()?;
-                        syn::parse_quote! { <#left as #op<#right>>::Output }
-                    }
-                    None => syn::parse_quote! { <#left as #op>::Output },
-                })
+                let right: syn::Type = (*right).try_into()?;
+                Ok(syn::parse_quote! { <#left as #op<#right>>::Output })
+            }
+            Op::UnOp { op, left } => {
+                let left: syn::Type = (*left).try_into()?;
+                Ok(syn::parse_quote! { <#left as #op>::Output })
             }
             Op::Path(path) => Ok(syn::parse_quote!(#path)),
         }
@@ -292,17 +334,16 @@ impl TryFrom<Op> for syn::Type {
 
 macro_rules! op {
     ($op:ident, $arg:ident) => {
-        Op::Op {
+        Op::UnOp {
             op: syn::parse_quote!($op),
             left: Box::new(Clause(*$arg).try_into()?),
-            right: None,
         }
     };
     ($op:ident, $left:ident, $right:ident) => {
-        Op::Op {
-            op: syn::parse_quote!($op),
+        Op::BinOp {
+            $op,
             left: Box::new(Clause(*$left).try_into()?),
-            right: Some(Box::new(Clause(*$right).try_into()?)),
+            right: Box::new(Clause(*$right).try_into()?),
         }
     };
 }
@@ -311,19 +352,8 @@ impl TryFrom<Clause> for Op {
     type Error = syn::Error;
     fn try_from(clause: Clause) -> syn::Result<Self> {
         match clause.0 {
-            expression!(Add, left, right) => Ok(op!(Add, left, right)),
-            expression!(And, left, right) => Ok(op!(And, left, right)),
-            expression!(BitAnd, left, right) => Ok(op!(BitAnd, left, right)),
-            expression!(BitOr, left, right) => Ok(op!(BitOr, left, right)),
-            expression!(BitXor, left, right) => Ok(op!(BitXor, left, right)),
-            expression!(Eq, left, right) => Ok(op!(Same, left, right)),
-            expression!(Ge, left, right) => Ok(op!(Ge, left, right)),
-            expression!(Gt, left, right) => Ok(op!(Gt, left, right)),
-            expression!(Le, left, right) => Ok(op!(Le, left, right)),
-            expression!(Lt, left, right) => Ok(op!(Lt, left, right)),
-            expression!(Ne, left, right) => Ok(op!(Ne, left, right)),
+            expression!(op, left, right) => Ok(op!(op, left, right)),
             expression!(Not, expr) => Ok(op!(Not, expr)),
-            expression!(Or, left, right) => Ok(op!(Or, left, right)),
             expression!(lit: lit) => Ok(lit.try_into()?),
             expression!(path: path) => Ok(Op::Path(path)),
             syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok(Clause(*expr).try_into()?),
@@ -387,12 +417,46 @@ struct ImplPredicate(Op);
 
 #[derive(Clone, Debug)]
 enum Op {
-    Op {
+    BinOp {
+        op: syn::BinOp,
+        left: Box<Self>,
+        right: Box<Self>,
+    },
+    UnOp {
         op: syn::Path,
         left: Box<Self>,
-        right: Option<Box<Self>>,
     },
     Path(syn::Path),
+}
+
+impl Op {
+    fn get_op_name(&self) -> syn::Result<syn::Path> {
+        if let Op::BinOp { op, .. } = self {
+            match op {
+                syn::BinOp::Add(_) => Ok(syn::parse_quote!(Add)),
+                syn::BinOp::And(_) => Ok(syn::parse_quote!(And)),
+                syn::BinOp::BitAnd(_) => Ok(syn::parse_quote!(BitAnd)),
+                syn::BinOp::BitOr(_) => Ok(syn::parse_quote!(BitOr)),
+                syn::BinOp::BitXor(_) => Ok(syn::parse_quote!(BitXor)),
+                syn::BinOp::Eq(_) => Ok(syn::parse_quote!(Same)),
+                syn::BinOp::Ge(_) => Ok(syn::parse_quote!(Ge)),
+                syn::BinOp::Gt(_) => Ok(syn::parse_quote!(Gt)),
+                syn::BinOp::Le(_) => Ok(syn::parse_quote!(Le)),
+                syn::BinOp::Lt(_) => Ok(syn::parse_quote!(Lt)),
+                syn::BinOp::Ne(_) => Ok(syn::parse_quote!(Ne)),
+                syn::BinOp::Or(_) => Ok(syn::parse_quote!(Or)),
+                unsupported_expr => Err(syn::Error::new(
+                    unsupported_expr.span(),
+                    "unsupported logical expression",
+                )),
+            }
+        } else {
+            Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "unimplemented",
+            ))
+        }
+    }
 }
 
 //  _____         _
@@ -658,7 +722,7 @@ mod tests {
             {
                 fn f<A: Bool, B: Bool, C: Bool>()
                 where
-                    <A as And<<B as Or<C>>::Output>>::Output: Same<C, Output = True>,
+                    A: And<<B as Or<C>>::Output, Output = C>,
                     <A as And<<B as Or<C>>::Output>>::Output: Same<C>,
                     A: And<<B as Or<C>>::Output>,
                     B: Or<C>,
@@ -734,7 +798,7 @@ mod tests {
             {
                 fn f<A: Usize, B: Usize>()
                 where
-                    <A as Add<B>>::Output: Same<U<U<T, B1>, B1>, Output = True>,
+                    A: Add<B, Output = U<U<T, B1>, B1>>,
                     <A as Add<B>>::Output: Same<U<U<T, B1>, B1>>,
                     A: Add<B>,
                 {

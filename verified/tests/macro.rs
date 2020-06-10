@@ -302,6 +302,30 @@ fn can_verify_usize_not_equal_clauses() {
 }
 
 #[test]
+fn can_verify_result_simple_addition_in_function_body_lhs() {
+    #[verify]
+    fn f<A: Usize, B: Usize, C: Usize>(a: A, b: B) -> C
+    where
+        _: Verify<{ A + B == C }>,
+    {
+        a + b
+    }
+    let _: Literal!(3) = f(<Literal!(1)>::new(), <Literal!(2)>::new());
+}
+
+#[test]
+fn can_verify_result_simple_addition_in_function_body_rhs() {
+    #[verify]
+    fn f<A: Usize, B: Usize, C: Usize>(a: A, b: B) -> C
+    where
+        _: Verify<{ C == A + B }>,
+    {
+        a + b
+    }
+    let _: Literal!(3) = f(<Literal!(1)>::new(), <Literal!(2)>::new());
+}
+
+#[test]
 fn can_construct_bool_literals() {
     assert_eq!(<Literal!(true)>::new(), True);
     assert_eq!(<Literal!(false)>::new(), False);
@@ -460,10 +484,10 @@ fn compilation_tests() {
     .and_expect(
         "
         error: unsupported logical expression
-         --> $DIR/Error_on_unsupported_expression_in_clause.rs:6:21
+         --> $DIR/Error_on_unsupported_expression_in_clause.rs:6:23
           |
         6 |         _: Verify<{ A * B }>,
-          |                     ^^^^^
+          |                       ^
         ",
     );
 
