@@ -1,7 +1,7 @@
 [package]
 name = "verified"
 description = "A library of types to facilitate the development of verifiable rust."
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Bob Gebert <bobgebert7@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -11,7 +11,7 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-verify_macro = { path = "../verify_macro", version = "0.1.1" }
+verify_macro = { path = "../verify_macro", version = "0.2.0" }
 
 [dev-dependencies]
 trybuild = "1.0.28"
