@@ -81,6 +81,11 @@ impl Usize for T {}
 /// ```
 #[derive(Clone, Copy, Debug, Default)]
 pub struct U<Msb: Usize, Lsb: Bit>(Msb, Lsb);
+impl<Msb: Usize, Lsb: Bit> U<Msb, Lsb> {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
 impl<Msb: Usize, Lsb: Bit> Usize for U<Msb, Lsb> where
     <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>
 {
@@ -498,6 +503,7 @@ mod tests {
         );
     }
 
+    // TODO: Normalize output
     #[test]
     fn self_bitxor_self_is_zero() {
         assert_eq!(U(T, B0) ^ U(T, B0), U(T, B0));
@@ -505,11 +511,13 @@ mod tests {
         assert_eq!(U(U(T, B1), B0) ^ U(U(T, B1), B0), U(U(T, B0), B0));
     }
 
+    // TODO: Normalize output
     #[test]
     fn self_bitxor_self_with_different_lsb_is_self_with_lsb_of_one() {
         assert_eq!(U(U(T, B0), B0) ^ U(U(T, B0), B1), U(U(T, B0), B1));
     }
 
+    // TODO: Normalize output
     #[test]
     fn self_bitxor_other_with_different_lsb_and_msb_applies_bitxor_to_each_bit() {
         assert_eq!(

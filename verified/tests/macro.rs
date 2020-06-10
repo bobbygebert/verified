@@ -302,6 +302,22 @@ fn can_verify_usize_not_equal_clauses() {
 }
 
 #[test]
+fn can_construct_bool_literals() {
+    assert_eq!(<Literal!(true)>::new(), True);
+    assert_eq!(<Literal!(false)>::new(), False);
+}
+
+#[test]
+fn can_construct_usize_literals() {
+    assert_eq!(<Literal!(0)>::new(), <U<T, B0>>::default());
+    assert_eq!(<Literal!(1)>::new(), <U<T, B1>>::default());
+    assert_eq!(
+        <Literal!(8)>::new(),
+        <U<U<U<U<T, B1>, B0>, B0>, B0>>::default()
+    );
+}
+
+#[test]
 #[ignore] // TODO: figure out how to make this test pass in automation.
 #[allow(non_snake_case)]
 fn compilation_tests() {

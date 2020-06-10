@@ -16,11 +16,21 @@ pub trait Bool: internal::Choice + Default + Not + std::convert::Into<bool> {}
 /// Type representing `true`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct True;
+impl True {
+    pub fn new() -> Self {
+        Self
+    }
+}
 impl Bool for True {}
 
 /// Type representing `false`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct False;
+impl False {
+    pub fn new() -> Self {
+        Self
+    }
+}
 impl Bool for False {}
 
 #[macro_export]

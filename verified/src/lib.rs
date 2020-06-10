@@ -46,7 +46,7 @@ pub use crate::ops::{
     Ordering, Same,
 };
 pub use crate::usize::{Add, Usize, B0, B1, T, U};
-pub use verify_macro::verify;
+pub use verify_macro::{verify, Literal};
 
 #[cfg(test)]
 mod tests {
