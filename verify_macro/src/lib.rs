@@ -140,9 +140,17 @@ impl syn::parse::Parse for Logic {
 
 impl syn::parse::Parse for Clause {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
-        let clause;
-        let _ = syn::braced!(clause in input);
-        Ok(Self(clause.parse()?))
+        let expr: syn::Expr = input.parse()?;
+        Ok(Self(match expr {
+            syn::Expr::Block(syn::ExprBlock {
+                block: syn::Block { stmts, .. },
+                ..
+            }) if stmts.len() == 1 => {
+                let stmt = stmts.first().unwrap();
+                syn::parse_quote!(#stmt)
+            }
+            expr => expr,
+        }))
     }
 }
 

@@ -318,6 +318,17 @@ fn can_construct_usize_literals() {
 }
 
 #[test]
+fn can_verify_bools_without_braces() {
+    #[verify]
+    fn f<B: Bool>()
+    where
+        _: Verify<B>,
+    {
+    }
+    f::<True>();
+}
+
+#[test]
 #[ignore] // TODO: figure out how to make this test pass in automation.
 #[allow(non_snake_case)]
 fn compilation_tests() {
