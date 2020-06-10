@@ -7,9 +7,15 @@ pub use std::ops::Add;
 mod internal {
     use std::ops::BitAnd;
 
-    pub trait Bit: Default + BitAnd + super::Compare<Self> + super::Same<Self> {}
-    impl Bit for super::B0 {}
-    impl Bit for super::B1 {}
+    pub trait Bit: Default + BitAnd + super::Compare<Self> + super::Same<Self> {
+        const VALUE: u8;
+    }
+    impl Bit for super::B0 {
+        const VALUE: u8 = 0;
+    }
+    impl Bit for super::B1 {
+        const VALUE: u8 = 1;
+    }
 
     pub trait Nat: Default {}
     impl Nat for super::T {}
@@ -21,7 +27,9 @@ mod internal {
 use internal::*;
 
 /// Trait bound for unsigned types.
-pub trait Usize: Nat + Compare<Self> + Same<Self> {}
+pub trait Usize: Nat + Compare<Self> + Same<Self> {
+    const VALUE: usize;
+}
 
 /// Representation of a `0` bit.
 ///
@@ -65,7 +73,14 @@ crate::impl_bool_ops!(B0, B1);
 /// ```
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct T;
-impl Usize for T {}
+impl Usize for T {
+    const VALUE: usize = 0;
+}
+impl From<T> for usize {
+    fn from(_: T) -> Self {
+        0
+    }
+}
 
 /// Constructor for `Usize` types.
 ///
@@ -86,9 +101,96 @@ impl<Msb: Usize, Lsb: Bit> U<Msb, Lsb> {
         Default::default()
     }
 }
-impl<Msb: Usize, Lsb: Bit> Usize for U<Msb, Lsb> where
-    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>
+impl<Msb: Usize, Lsb: Bit> Usize for U<Msb, Lsb>
+where
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>,
 {
+    const VALUE: usize = 2 * Msb::VALUE + Lsb::VALUE as usize;
+}
+impl<Msb: Usize, Lsb: Bit> From<U<Msb, Lsb>> for usize
+where
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>,
+    <Msb as Compare<Msb>>::Output: Compare<Equal>,
+{
+    fn from(_: U<Msb, Lsb>) -> Self {
+        <U<Msb, Lsb> as Usize>::VALUE
+    }
+}
+impl<Msb: Usize, Lsb: Bit> std::convert::TryFrom<usize> for U<Msb, Lsb>
+where
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>,
+{
+    type Error = String;
+    fn try_from(maybe_self: usize) -> Result<Self, Self::Error> {
+        let expected = <Self as Usize>::VALUE;
+        if maybe_self == expected {
+            Ok(Self::default())
+        } else {
+            Err(format!(
+                "cannot convert {} into Literal!({})",
+                maybe_self, expected
+            ))
+        }
+    }
+}
+impl<Msb: Usize, Lsb: Bit> std::ops::Deref for U<Msb, Lsb>
+where
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>,
+{
+    type Target = usize;
+    fn deref(&self) -> &usize {
+        &<Self as Usize>::VALUE
+    }
+}
+impl<Msb: Usize, Lsb: Bit> std::borrow::Borrow<usize> for U<Msb, Lsb>
+where
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>,
+{
+    fn borrow(&self) -> &usize {
+        &<Self as Usize>::VALUE
+    }
+}
+impl<Msb: Usize, Lsb: Bit> std::convert::AsRef<usize> for U<Msb, Lsb>
+where
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>,
+{
+    fn as_ref(&self) -> &usize {
+        &<Self as Usize>::VALUE
+    }
+}
+impl<Msb: Usize, Lsb: Bit> PartialEq<usize> for U<Msb, Lsb>
+where
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>,
+{
+    fn eq(&self, other: &usize) -> bool {
+        AsRef::<usize>::as_ref(self) == other
+    }
+}
+impl<Msb: Usize, Lsb: Bit> PartialOrd<usize> for U<Msb, Lsb>
+where
+    U<Msb, Lsb>: Compare<U<Msb, Lsb>>,
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>,
+{
+    fn partial_cmp(&self, other: &usize) -> Option<std::cmp::Ordering> {
+        AsRef::<usize>::as_ref(self).partial_cmp(other)
+    }
+}
+impl<Msb: Usize, Lsb: Bit> PartialEq<U<Msb, Lsb>> for usize
+where
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>,
+{
+    fn eq(&self, other: &U<Msb, Lsb>) -> bool {
+        self == AsRef::<usize>::as_ref(other)
+    }
+}
+impl<Msb: Usize, Lsb: Bit> PartialOrd<U<Msb, Lsb>> for usize
+where
+    U<Msb, Lsb>: Compare<U<Msb, Lsb>>,
+    <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>,
+{
+    fn partial_cmp(&self, other: &U<Msb, Lsb>) -> Option<std::cmp::Ordering> {
+        self.partial_cmp(AsRef::<usize>::as_ref(other))
+    }
 }
 
 impl Compare<T> for T {
@@ -621,5 +723,36 @@ mod tests {
         assert_eq!(<Greater as Same<Less>>::Output::default(), False);
         assert_eq!(<Greater as Same<Equal>>::Output::default(), False);
         assert_eq!(<Greater as Same<Greater>>::Output::default(), True);
+    }
+
+    #[test]
+    fn can_convert_u_into_usize() {
+        assert_eq!(Into::<usize>::into(T), 0);
+        assert_eq!(Into::<usize>::into(U(T, B0)), 0);
+        assert_eq!(Into::<usize>::into(U(T, B1)), 1);
+        assert_eq!(Into::<usize>::into(U(U(T, B1), B0)), 2);
+        assert_eq!(Into::<usize>::into(U(U(T, B1), B1)), 3);
+        assert_eq!(Into::<usize>::into(U(U(U(T, B1), B0), B1)), 5);
+        assert_eq!(std::ops::Deref::deref(&U(T, B1)), &1);
+        assert_eq!(std::borrow::Borrow::<usize>::borrow(&U(T, B1)), &1);
+        assert_eq!(std::convert::AsRef::<usize>::as_ref(&U(T, B1)), &1);
+        assert_eq!(U(T, B1), 1);
+        assert_eq!(1, U(T, B1));
+        assert!(U(T, B0) < 1);
+        assert!(1 > U(T, B0));
+    }
+
+    #[test]
+    fn can_convert_usze_into_u() {
+        assert_eq!(std::convert::TryInto::<U<T, B0>>::try_into(0), Ok(U(T, B0)));
+        assert_eq!(std::convert::TryInto::<U<T, B1>>::try_into(1), Ok(U(T, B1)));
+        assert_eq!(
+            std::convert::TryInto::<U<T, B1>>::try_into(0),
+            Err("cannot convert 0 into Literal!(1)".to_string())
+        );
+        assert_eq!(
+            std::convert::TryInto::<U<T, B0>>::try_into(1),
+            Err("cannot convert 1 into Literal!(0)".to_string())
+        );
     }
 }

@@ -97,13 +97,11 @@ macro_rules! impl_bool_ops {
                 true
             }
         }
-
         impl From<$false> for bool {
             fn from(_: $false) -> Self {
                 false
             }
         }
-
         impl std::convert::TryFrom<bool> for $true {
             type Error = &'static str;
             fn try_from(maybe_true: bool) -> Result<Self, Self::Error> {
@@ -114,7 +112,6 @@ macro_rules! impl_bool_ops {
                 }
             }
         }
-
         impl std::convert::TryFrom<bool> for $false {
             type Error = &'static str;
             fn try_from(maybe_false: bool) -> Result<Self, Self::Error> {
@@ -123,6 +120,78 @@ macro_rules! impl_bool_ops {
                 } else {
                     Err("cannot convert true into False")
                 }
+            }
+        }
+        impl std::ops::Deref for $false {
+            type Target = bool;
+            fn deref(&self) -> &Self::Target {
+                &false
+            }
+        }
+        impl std::ops::Deref for $true {
+            type Target = bool;
+            fn deref(&self) -> &Self::Target {
+                &true
+            }
+        }
+        impl std::borrow::Borrow<bool> for $false {
+            fn borrow(&self) -> &bool {
+                &false
+            }
+        }
+        impl std::borrow::Borrow<bool> for $true {
+            fn borrow(&self) -> &bool {
+                &true
+            }
+        }
+        impl std::convert::AsRef<bool> for $false {
+            fn as_ref(&self) -> &bool {
+                &false
+            }
+        }
+        impl std::convert::AsRef<bool> for $true {
+            fn as_ref(&self) -> &bool {
+                &true
+            }
+        }
+        impl PartialEq<bool> for $false {
+            fn eq(&self, other: &bool) -> bool {
+                AsRef::<bool>::as_ref(self).eq(other)
+            }
+        }
+        impl PartialEq<bool> for $true {
+            fn eq(&self, other: &bool) -> bool {
+                AsRef::<bool>::as_ref(self).eq(other)
+            }
+        }
+        impl PartialOrd<bool> for $false {
+            fn partial_cmp(&self, other: &bool) -> Option<std::cmp::Ordering> {
+                AsRef::<bool>::as_ref(self).partial_cmp(other)
+            }
+        }
+        impl PartialOrd<bool> for $true {
+            fn partial_cmp(&self, other: &bool) -> Option<std::cmp::Ordering> {
+                AsRef::<bool>::as_ref(self).partial_cmp(other)
+            }
+        }
+        impl PartialEq<$false> for bool {
+            fn eq(&self, other: &$false) -> bool {
+                self.eq(AsRef::<bool>::as_ref(other))
+            }
+        }
+        impl PartialEq<$true> for bool {
+            fn eq(&self, other: &$true) -> bool {
+                self.eq(AsRef::<bool>::as_ref(other))
+            }
+        }
+        impl PartialOrd<$false> for bool {
+            fn partial_cmp(&self, other: &$false) -> Option<std::cmp::Ordering> {
+                self.partial_cmp(AsRef::<bool>::as_ref(other))
+            }
+        }
+        impl PartialOrd<$true> for bool {
+            fn partial_cmp(&self, other: &$true) -> Option<std::cmp::Ordering> {
+                self.partial_cmp(AsRef::<bool>::as_ref(other))
             }
         }
 
@@ -324,13 +393,25 @@ mod tests {
     }
 
     #[test]
-    fn bool_from_True_returns_true() {
+    fn can_convert_Bool_into_bool() {
         assert!(bool::from(True));
-    }
-
-    #[test]
-    fn bool_from_False_returns_false() {
         assert!(!bool::from(False));
+        assert_eq!(Into::<bool>::into(False), false);
+        assert_eq!(Into::<bool>::into(True), true);
+        assert_eq!(std::ops::Deref::deref(&False), &false);
+        assert_eq!(std::ops::Deref::deref(&True), &true);
+        assert_eq!(std::borrow::Borrow::<bool>::borrow(&False), &false);
+        assert_eq!(std::borrow::Borrow::<bool>::borrow(&True), &true);
+        assert_eq!(std::convert::AsRef::<bool>::as_ref(&False), &false);
+        assert_eq!(std::convert::AsRef::<bool>::as_ref(&True), &true);
+        assert_eq!(False, false);
+        assert_eq!(True, true);
+        assert_eq!(false, False);
+        assert_eq!(true, True);
+        assert!(False < true);
+        assert!(True > false);
+        assert!(false < True);
+        assert!(true > False);
     }
 
     #[test]
