@@ -1,5 +1,7 @@
-use crate::bool::{Bool, False, Or, True};
-use crate::Same;
+//! Types and traits for representing unsigned integers as types.
+
+use crate::ops::*;
+use crate::{Bool, False, True};
 pub use std::ops::Add;
 
 mod internal {
@@ -12,148 +14,76 @@ mod internal {
     pub trait Nat: Default {}
     impl Nat for super::T {}
     impl<Msb: super::Usize, Lsb: Bit> Nat for super::U<Msb, Lsb> {}
+
+    pub trait NotT {}
+    impl<Msb: super::Usize, Lsb: Bit> NotT for super::U<Msb, Lsb> {}
 }
 use internal::*;
 
+/// Trait bound for unsigned types.
 pub trait Usize: Nat + Compare<Self> + Same<Self> {}
 
+/// Representation of a `0` bit.
+///
+/// # Examples
+///
+/// ```
+/// use verified::*;
+///
+/// let _: U<T, B0>;
+/// //          ^
+/// ```
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct B0;
 impl Bool for B0 {}
 
+/// Representation of a `1` bit.
+///
+/// # Examples
+///
+/// ```
+/// use verified::*;
+///
+/// let _: U<T, B1>;
+/// //          ^
+/// ```
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct B1;
 impl Bool for B1 {}
 
 crate::impl_bool_ops!(B0, B1);
 
+/// Null terminator for `U` types.
+///
+/// # Examples
+///
+/// ```
+/// use verified::*;
+///
+/// let _: U<T, B1>;
+/// //       ^
+/// ```
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct T;
 impl Usize for T {}
-pub trait NotT {}
-impl<Msb: Usize, Lsb: Bit> NotT for U<Msb, Lsb> {}
 
+/// Constructor for `Usize` types.
+///
+/// # Examples
+///
+/// ```
+/// use verified::*;
+///
+/// let zero: U<T, B0>;
+/// let one: U<T, B1>;
+/// let two: U<U<T, B1>, B0>;
+/// let three: U<U<T, B1>, B1>;
+/// ```
 #[derive(Clone, Copy, Debug, Default)]
 pub struct U<Msb: Usize, Lsb: Bit>(Msb, Lsb);
 impl<Msb: Usize, Lsb: Bit> Usize for U<Msb, Lsb> where
     <Msb as Compare<Msb>>::Output: Compare<<Lsb as Compare<Lsb>>::Output>
 {
-}
-
-pub trait Ordering: Into<std::cmp::Ordering> + Default + Same<Equal> {}
-#[derive(Default)]
-pub struct Less;
-impl Ordering for Less {}
-impl Same<Less> for Less {
-    type Output = True;
-}
-impl Same<Equal> for Less {
-    type Output = False;
-}
-impl Same<Greater> for Less {
-    type Output = False;
-}
-impl From<Less> for std::cmp::Ordering {
-    fn from(_from: Less) -> Self {
-        std::cmp::Ordering::Less
-    }
-}
-pub trait Lt<Rhs> {
-    type Output: Bool;
-}
-impl<Lhs: NotCompare, Rhs: NotCompare> Lt<Rhs> for Lhs
-where
-    Lhs: Compare<Rhs>,
-    <Lhs as Compare<Rhs>>::Output: Ordering + Same<Less>,
-{
-    type Output = <<Lhs as Compare<Rhs>>::Output as Same<Less>>::Output;
-}
-pub trait Le<Rhs> {
-    type Output: Bool;
-}
-impl<Lhs: NotCompare, Rhs: NotCompare> Le<Rhs> for Lhs
-where
-    Lhs: Compare<Rhs>,
-    <Lhs as Compare<Rhs>>::Output: Ordering + Same<Less> + Same<Equal>,
-    <<Lhs as Compare<Rhs>>::Output as Same<Less>>::Output:
-        Or<<<Lhs as Compare<Rhs>>::Output as Same<Equal>>::Output>,
-{
-    type Output = <<<Lhs as Compare<Rhs>>::Output as Same<Less>>::Output as Or<
-        <<Lhs as Compare<Rhs>>::Output as Same<Equal>>::Output,
-    >>::Output;
-}
-
-#[derive(Default)]
-pub struct Equal;
-impl Ordering for Equal {}
-impl Same<Less> for Equal {
-    type Output = False;
-}
-impl Same<Equal> for Equal {
-    type Output = True;
-}
-impl Same<Greater> for Equal {
-    type Output = False;
-}
-impl From<Equal> for std::cmp::Ordering {
-    fn from(_from: Equal) -> Self {
-        std::cmp::Ordering::Equal
-    }
-}
-
-#[derive(Default)]
-pub struct Greater;
-impl Ordering for Greater {}
-impl Same<Less> for Greater {
-    type Output = False;
-}
-impl Same<Equal> for Greater {
-    type Output = False;
-}
-impl Same<Greater> for Greater {
-    type Output = True;
-}
-impl From<Greater> for std::cmp::Ordering {
-    fn from(_from: Greater) -> Self {
-        std::cmp::Ordering::Greater
-    }
-}
-pub trait Gt<Rhs> {
-    type Output: Bool;
-}
-impl<Lhs: NotCompare, Rhs: NotCompare> Gt<Rhs> for Lhs
-where
-    Lhs: Compare<Rhs>,
-    <Lhs as Compare<Rhs>>::Output: Ordering + Same<Greater>,
-{
-    type Output = <<Lhs as Compare<Rhs>>::Output as Same<Greater>>::Output;
-}
-pub trait Ge<Rhs> {
-    type Output: Bool;
-}
-impl<Lhs: NotCompare, Rhs: NotCompare> Ge<Rhs> for Lhs
-where
-    Lhs: Compare<Rhs>,
-    <Lhs as Compare<Rhs>>::Output: Ordering + Same<Greater> + Same<Equal>,
-    <<Lhs as Compare<Rhs>>::Output as Same<Greater>>::Output:
-        Or<<<Lhs as Compare<Rhs>>::Output as Same<Equal>>::Output>,
-{
-    type Output = <<<Lhs as Compare<Rhs>>::Output as Same<Greater>>::Output as Or<
-        <<Lhs as Compare<Rhs>>::Output as Same<Equal>>::Output,
-    >>::Output;
-}
-
-pub trait Compare<Rhs> {
-    type Output: Ordering;
-}
-impl<LsbOrdering> Compare<LsbOrdering> for Less {
-    type Output = Less;
-}
-impl<LsbOrdering: Ordering> Compare<LsbOrdering> for Equal {
-    type Output = LsbOrdering;
-}
-impl<LsbOrdering> Compare<LsbOrdering> for Greater {
-    type Output = Greater;
 }
 
 impl Compare<T> for T {
@@ -189,9 +119,7 @@ where
     }
 }
 
-pub trait NotCompare {}
-impl<T: Usize> NotCompare for T {}
-impl<Lhs: NotCompare + Usize, Rhs: NotCompare + Usize> Same<Rhs> for Lhs
+impl<Lhs: Usize, Rhs: Usize> Same<Rhs> for Lhs
 where
     Lhs: Compare<Rhs>,
 {

@@ -320,7 +320,7 @@ fn compilation_tests() {
     )
     .and_expect(
         "
-        error[E0271]: type mismatch resolving `<verified::bool::False as verified::Same<verified::bool::True>>::Output == verified::bool::True`
+        error[E0271]: type mismatch resolving `<verified::bool::False as verified::ops::Same<verified::bool::True>>::Output == verified::bool::True`
          --> $DIR/False_is_not_true.rs:9:5
           |
         3 |     #[verify]
