@@ -61,7 +61,7 @@ impl From<Less> for std::cmp::Ordering {
 pub trait Lt<Rhs> {
     type Output: Bool;
 }
-impl<Lhs: NotCompare + Usize, Rhs: NotCompare + Usize> Lt<Rhs> for Lhs
+impl<Lhs: NotCompare, Rhs: NotCompare> Lt<Rhs> for Lhs
 where
     Lhs: Compare<Rhs>,
     <Lhs as Compare<Rhs>>::Output: Ordering + Same<Less>,
@@ -71,7 +71,7 @@ where
 pub trait Le<Rhs> {
     type Output: Bool;
 }
-impl<Lhs: NotCompare + Usize, Rhs: NotCompare + Usize> Le<Rhs> for Lhs
+impl<Lhs: NotCompare, Rhs: NotCompare> Le<Rhs> for Lhs
 where
     Lhs: Compare<Rhs>,
     <Lhs as Compare<Rhs>>::Output: Ordering + Same<Less> + Same<Equal>,
@@ -121,7 +121,7 @@ impl From<Greater> for std::cmp::Ordering {
 pub trait Gt<Rhs> {
     type Output: Bool;
 }
-impl<Lhs: NotCompare + Usize, Rhs: NotCompare + Usize> Gt<Rhs> for Lhs
+impl<Lhs: NotCompare, Rhs: NotCompare> Gt<Rhs> for Lhs
 where
     Lhs: Compare<Rhs>,
     <Lhs as Compare<Rhs>>::Output: Ordering + Same<Greater>,
@@ -131,7 +131,7 @@ where
 pub trait Ge<Rhs> {
     type Output: Bool;
 }
-impl<Lhs: NotCompare + Usize, Rhs: NotCompare + Usize> Ge<Rhs> for Lhs
+impl<Lhs: NotCompare, Rhs: NotCompare> Ge<Rhs> for Lhs
 where
     Lhs: Compare<Rhs>,
     <Lhs as Compare<Rhs>>::Output: Ordering + Same<Greater> + Same<Equal>,
@@ -157,18 +157,6 @@ impl<LsbOrdering> Compare<LsbOrdering> for Greater {
 }
 
 impl Compare<T> for T {
-    type Output = Equal;
-}
-impl Compare<B0> for B0 {
-    type Output = Equal;
-}
-impl Compare<B0> for B1 {
-    type Output = Greater;
-}
-impl Compare<B1> for B0 {
-    type Output = Less;
-}
-impl Compare<B1> for B1 {
     type Output = Equal;
 }
 impl<LhsMsb: Usize, LhsLsb: Bit> Compare<T> for U<LhsMsb, LhsLsb> {
@@ -203,9 +191,7 @@ where
 
 pub trait NotCompare {}
 impl<T: Usize> NotCompare for T {}
-impl NotCompare for B0 {}
-impl NotCompare for B1 {}
-impl<Lhs: NotCompare, Rhs: NotCompare> Same<Rhs> for Lhs
+impl<Lhs: NotCompare + Usize, Rhs: NotCompare + Usize> Same<Rhs> for Lhs
 where
     Lhs: Compare<Rhs>,
 {

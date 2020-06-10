@@ -18,19 +18,6 @@ impl Bool for True {}
 pub struct False;
 impl Bool for False {}
 
-impl Same<False> for False {
-    type Output = True;
-}
-impl Same<False> for True {
-    type Output = False;
-}
-impl Same<True> for False {
-    type Output = False;
-}
-impl Same<True> for True {
-    type Output = True;
-}
-
 pub trait And<Rhs: Bool> {
     type Output: Bool;
 }
@@ -43,6 +30,34 @@ pub trait Or<Rhs: Bool> {
 macro_rules! impl_bool_ops {
     ($false:ident, $true:ident) => {
         pub use std::ops::{BitAnd, BitOr, BitXor, Not};
+
+        impl Same<$false> for $false {
+            type Output = $true;
+        }
+        impl Same<$false> for $true {
+            type Output = False;
+        }
+        impl Same<$true> for $false {
+            type Output = False;
+        }
+        impl Same<$true> for $true {
+            type Output = True;
+        }
+
+        impl crate::usize::NotCompare for $false {}
+        impl crate::usize::NotCompare for $true {}
+        impl crate::usize::Compare<$false> for $false {
+            type Output = crate::usize::Equal;
+        }
+        impl crate::usize::Compare<$false> for $true {
+            type Output = crate::usize::Greater;
+        }
+        impl crate::usize::Compare<$true> for $false {
+            type Output = crate::usize::Less;
+        }
+        impl crate::usize::Compare<$true> for $true {
+            type Output = crate::usize::Equal;
+        }
 
         impl crate::bool::And<$false> for $false {
             type Output = $false;

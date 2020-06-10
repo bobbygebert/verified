@@ -1,7 +1,9 @@
 pub mod bool;
 pub mod usize;
 pub use crate::bool::*;
-pub use crate::usize::{Add, Equal, Ge, Greater, Gt, Le, Less, Lt, Ordering, Usize, B0, B1, T, U};
+pub use crate::usize::{
+    Add, Compare, Equal, Ge, Greater, Gt, Le, Less, Lt, Ordering, Usize, B0, B1, T, U,
+};
 pub use verify_macro::verify;
 
 pub struct ForAll;

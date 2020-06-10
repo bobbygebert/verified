@@ -116,6 +116,54 @@ fn can_verify_nested_unary_clause() {
 }
 
 #[test]
+fn can_verify_bool_less_than_clauses() {
+    #[verify]
+    fn f<A: Bool, B: Bool>()
+    where
+        _: Verify<{ A < B }>,
+    {
+    }
+    f::<False, True>();
+}
+
+#[test]
+fn can_verify_bool_greater_than_clauses() {
+    #[verify]
+    fn f<A: Bool, B: Bool>()
+    where
+        _: Verify<{ A > B }>,
+    {
+    }
+    f::<True, False>();
+}
+
+#[test]
+fn can_verify_bool_less_equal_clauses() {
+    #[verify]
+    fn f<A: Bool, B: Bool>()
+    where
+        _: Verify<{ A <= B }>,
+    {
+    }
+    f::<False, True>();
+    f::<False, False>();
+    f::<True, True>();
+}
+
+#[test]
+fn can_verify_bool_greater_equal_clauses() {
+    #[verify]
+    fn f<A: Bool, B: Bool>()
+    where
+        _: Verify<{ A >= B }>,
+    {
+    }
+    f::<True, False>();
+    f::<False, False>();
+    f::<True, True>();
+}
+
+#[test]
 fn can_verify_bool_not_equal_clauses() {
     #[verify]
     fn f<A: Bool, B: Bool>()
