@@ -1,6 +1,5 @@
 mod compile;
 use compile::Compile;
-use std::ops::{Add, BitAnd, BitOr, BitXor, Not};
 use verified::*;
 
 const TRUE: B1 = B1;
@@ -249,6 +248,61 @@ fn can_verify_usize_addition_clauses() {
 }
 
 #[test]
+fn can_verify_usize_multiplication_clauses() {
+    #[verify]
+    fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
+    where
+        _: Verify<{ (A * B) == 8 }>,
+    {
+    }
+    f(U2::default(), U4::default());
+}
+
+#[test]
+fn can_verify_usize_division_clauses() {
+    #[verify]
+    fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
+    where
+        _: Verify<{ (A / B) == 4 }>,
+    {
+    }
+    f(U8::default(), U2::default());
+}
+
+#[test]
+fn can_verify_usize_rem_clauses() {
+    #[verify]
+    fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
+    where
+        _: Verify<{ (A % B) == 2 }>,
+    {
+    }
+    f(U8::default(), U3::default());
+}
+
+#[test]
+fn can_verify_usize_shl_clauses() {
+    #[verify]
+    fn f<A: Unsigned>(_: A)
+    where
+        _: Verify<{ (A << 2) == 4 }>,
+    {
+    }
+    f(U1::default());
+}
+
+#[test]
+fn can_verify_usize_shr_clauses() {
+    #[verify]
+    fn f<A: Unsigned>(_: A)
+    where
+        _: Verify<{ (A >> 2) == 1 }>,
+    {
+    }
+    f(U4::default());
+}
+
+#[test]
 fn can_verify_usize_less_than_clauses() {
     #[verify]
     fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
@@ -437,17 +491,17 @@ fn compilation_tests() {
         #[verify]
         fn _f<A: Bit, B: Bit>()
         where
-            _: Verify<{ A * B }>,
+            _: Verify<{ A *= B }>,
         {}
         ",
     )
     .and_expect(
         "
         error: unsupported logical expression
-         --> $DIR/Error_on_unsupported_expression_in_clause.rs:6:23
+         --> $DIR/Error_on_unsupported_expression_in_clause.rs:6:21
           |
-        6 |         _: Verify<{ A * B }>,
-          |                       ^
+        6 |         _: Verify<{ A *= B }>,
+          |                     ^^^^^^
         ",
     );
 

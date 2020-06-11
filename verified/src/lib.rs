@@ -38,6 +38,7 @@
 //!     slow_routine::<String, U128>(Default::default());
 //! }
 //! ```
+pub use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Not, Rem, Shl, Shr};
 pub use typenum::*;
 pub use verify_macro::verify;
 
