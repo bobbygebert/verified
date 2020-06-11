@@ -38,14 +38,7 @@
 //!     slow_routine::<String, U128>(Default::default());
 //! }
 //! ```
-pub use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Not, Rem, Shl, Shr};
+pub mod vec;
+pub use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Not, Rem, Shl, Shr, Sub};
 pub use typenum::*;
 pub use verify_macro::verify;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}

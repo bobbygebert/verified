@@ -248,6 +248,17 @@ fn can_verify_usize_addition_clauses() {
 }
 
 #[test]
+fn can_verify_usize_subtraction_clauses() {
+    #[verify]
+    fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
+    where
+        _: Verify<{ (A - B) == 3 }>,
+    {
+    }
+    f(U5::default(), U2::default());
+}
+
+#[test]
 fn can_verify_usize_multiplication_clauses() {
     #[verify]
     fn f<A: Unsigned, B: Unsigned>(_: A, _: B)

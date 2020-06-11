@@ -20,9 +20,15 @@ pub fn verify(_attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
+// TODO: Clean up the branching logic here.
 fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
-    let verified_fn: VerifiedFn = syn::parse(item.clone())?;
-    Ok(verified_fn.item.into_token_stream().into())
+    let verified_fn: syn::Result<VerifiedFn> = syn::parse(item.clone());
+    if verified_fn.is_err() {
+        let verified_impl: VerifiedImpl = syn::parse(item)?;
+        Ok(verified_impl.item.into_token_stream().into())
+    } else {
+        Ok(verified_fn.unwrap().item.into_token_stream().into())
+    }
 }
 
 //  ____                _
@@ -33,78 +39,20 @@ fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
 //                              |___/
 //  FIGLET: Parsing
 
+impl syn::parse::Parse for VerifiedImpl {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        let mut item: syn::ItemImpl = input.parse()?;
+        let mut where_clause = item.generics.make_where_clause();
+        update_where_clause(&mut where_clause)?;
+        Ok(Self { item })
+    }
+}
+
 impl syn::parse::Parse for VerifiedFn {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let mut item: syn::ItemFn = input.parse()?;
-        let where_clause = item.sig.generics.make_where_clause();
-        let (mut predicates, inferred_bounds): (Vec<_>, Vec<_>) = where_clause
-            .clone()
-            .predicates
-            .into_iter()
-            .partition(|clause| match clause {
-                syn::WherePredicate::Type(syn::PredicateType {
-                    bounded_ty: syn::Type::Infer(_),
-                    ..
-                }) => false,
-                _ => true,
-            });
-
-        if inferred_bounds.len() > 1 {
-            return Err(syn::Error::new(
-                inferred_bounds[1].span(),
-                "did not expect to find second `Verify` bound",
-            ));
-        }
-
-        let bounds = if let Some(syn::WherePredicate::Type(syn::PredicateType { bounds, .. })) =
-            inferred_bounds.first()
-        {
-            Ok(bounds)
-        } else {
-            Err(syn::Error::new(
-                where_clause.span(),
-                "expected `_: Verify<_>`",
-            ))
-        }?;
-
-        let syn::TraitBound { ref path, .. } =
-            if let Some(syn::TypeParamBound::Trait(bound)) = bounds.first() {
-                Ok(bound)
-            } else {
-                Err(syn::Error::new(where_clause.span(), "expected `Verify<_>`"))
-            }?;
-
-        let generics = if path.segments.len() == 1
-            && path.segments.last().unwrap().ident.to_string() == "Verify"
-        {
-            Ok(&path.segments.last().unwrap().arguments)
-        } else {
-            Err(syn::Error::new(path.span(), "expected `Verify<_>`"))
-        }?;
-
-        let clauses =
-            if let syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
-                ref args,
-                ..
-            }) = generics
-            {
-                Ok(args)
-            } else {
-                Err(syn::Error::new(generics.span(), "expected `<_>`"))
-            }?;
-
-        let logic: Logic = syn::parse2(clauses.to_token_stream())?;
-
-        for clause in logic.clauses.into_iter() {
-            predicates.extend(
-                TryInto::<Vec<_>>::try_into(clause)?
-                    .into_iter()
-                    .map(|p| syn::WherePredicate::Type(p)),
-            );
-        }
-
-        where_clause.predicates = std::iter::FromIterator::from_iter(predicates);
-
+        let mut where_clause = item.sig.generics.make_where_clause();
+        update_where_clause(&mut where_clause)?;
         Ok(Self { item })
     }
 }
@@ -141,12 +89,88 @@ impl quote::ToTokens for VerifiedFn {
     }
 }
 
+impl quote::ToTokens for VerifiedImpl {
+    fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
+        self.item.to_tokens(out)
+    }
+}
+
 //  _____                    _       _   _
 // |_   _| __ __ _ _ __  ___| | __ _| |_(_) ___  _ __  ___
 //   | || '__/ _` | '_ \/ __| |/ _` | __| |/ _ \| '_ \/ __|
 //   | || | | (_| | | | \__ \ | (_| | |_| | (_) | | | \__ \
 //   |_||_|  \__,_|_| |_|___/_|\__,_|\__|_|\___/|_| |_|___/
 //  FIGLET: Translations
+
+fn update_where_clause(where_clause: &mut syn::WhereClause) -> syn::Result<()> {
+    let (mut predicates, inferred_bounds): (Vec<_>, Vec<_>) = where_clause
+        .clone()
+        .predicates
+        .into_iter()
+        .partition(|clause| match clause {
+            syn::WherePredicate::Type(syn::PredicateType {
+                bounded_ty: syn::Type::Infer(_),
+                ..
+            }) => false,
+            _ => true,
+        });
+
+    if inferred_bounds.len() > 1 {
+        return Err(syn::Error::new(
+            inferred_bounds[1].span(),
+            "did not expect to find second `Verify` bound",
+        ));
+    }
+
+    let bounds = if let Some(syn::WherePredicate::Type(syn::PredicateType { bounds, .. })) =
+        inferred_bounds.first()
+    {
+        Ok(bounds)
+    } else {
+        Err(syn::Error::new(
+            where_clause.span(),
+            "expected `_: Verify<_>`",
+        ))
+    }?;
+
+    let syn::TraitBound { ref path, .. } =
+        if let Some(syn::TypeParamBound::Trait(bound)) = bounds.first() {
+            Ok(bound)
+        } else {
+            Err(syn::Error::new(where_clause.span(), "expected `Verify<_>`"))
+        }?;
+
+    let generics = if path.segments.len() == 1
+        && path.segments.last().unwrap().ident.to_string() == "Verify"
+    {
+        Ok(&path.segments.last().unwrap().arguments)
+    } else {
+        Err(syn::Error::new(path.span(), "expected `Verify<_>`"))
+    }?;
+
+    let clauses = if let syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
+        ref args,
+        ..
+    }) = generics
+    {
+        Ok(args)
+    } else {
+        Err(syn::Error::new(generics.span(), "expected `<_>`"))
+    }?;
+
+    let logic: Logic = syn::parse2(clauses.to_token_stream())?;
+
+    for clause in logic.clauses.into_iter() {
+        predicates.extend(
+            TryInto::<Vec<_>>::try_into(clause)?
+                .into_iter()
+                .map(|p| syn::WherePredicate::Type(p)),
+        );
+    }
+
+    where_clause.predicates = std::iter::FromIterator::from_iter(predicates);
+    Ok(())
+}
 
 macro_rules! expression {
     (lit: $lit:ident) => {
@@ -205,15 +229,30 @@ impl TryFrom<ImplPredicate> for Vec<syn::PredicateType> {
     fn try_from(ImplPredicate(from): ImplPredicate) -> syn::Result<Self> {
         let op_name = from.get_op_name();
         Ok(match from {
-            Op::BinOp { left, right, .. } => {
-                let op = op_name?;
+            Op::BinOp { op, left, right } => {
+                let op_name = op_name?;
                 let left_ty: syn::Type = (*left.clone()).try_into()?;
                 let right_ty: syn::Type = (*right.clone()).try_into()?;
-                vec![predicate! {{ #left_ty }: { #op<#right_ty> }}]
-                    .into_iter()
-                    .chain(TryInto::<Self>::try_into(ImplPredicate(*left))?.into_iter())
-                    .chain(TryInto::<Self>::try_into(ImplPredicate(*right))?.into_iter())
-                    .collect()
+                match op {
+                    syn::BinOp::Eq(_)
+                    | syn::BinOp::Ne(_)
+                    | syn::BinOp::Le(_)
+                    | syn::BinOp::Ge(_) => vec![predicate! {{ #left_ty }: { Cmp<#right_ty> }}],
+                    syn::BinOp::Lt(_) => vec![
+                        predicate! {{ #left_ty }: { Cmp<#right_ty> }},
+                        predicate! {{ #left_ty }: { IsLessOrEqual<#right_ty> }},
+                    ],
+                    syn::BinOp::Gt(_) => vec![
+                        predicate! {{ #left_ty }: { Cmp<#right_ty> }},
+                        predicate! {{ #left_ty }: { IsGreaterOrEqual<#right_ty> }},
+                    ],
+                    _ => vec![],
+                }
+                .into_iter()
+                .chain(vec![predicate! {{ #left_ty }: { #op_name<#right_ty> }}])
+                .chain(TryInto::<Self>::try_into(ImplPredicate(*left))?.into_iter())
+                .chain(TryInto::<Self>::try_into(ImplPredicate(*right))?.into_iter())
+                .collect()
             }
             Op::UnOp { op, left } => {
                 let left_ty: syn::Type = (*left.clone()).try_into()?;
@@ -384,6 +423,11 @@ struct VerifiedFn {
 }
 
 #[derive(Debug)]
+struct VerifiedImpl {
+    item: syn::ItemImpl,
+}
+
+#[derive(Debug)]
 struct Logic {
     clauses: Vec<Clause>,
 }
@@ -426,6 +470,7 @@ impl Op {
                 syn::BinOp::Ne(_) => Ok(syn::parse_quote!(IsNotEqual)),
                 syn::BinOp::Shl(_) => Ok(syn::parse_quote!(Shl)),
                 syn::BinOp::Shr(_) => Ok(syn::parse_quote!(Shr)),
+                syn::BinOp::Sub(_) => Ok(syn::parse_quote!(Sub)),
                 unsupported_expr => Err(syn::Error::new(
                     unsupported_expr.span(),
                     "unsupported logical expression",
@@ -538,6 +583,7 @@ mod tests {
                 fn f<A: Bit, B: Bit>()
                 where
                     A: IsEqual<B, Output = B1>,
+                    A: Cmp<B>,
                     A: IsEqual<B>,
                 {
                 }
@@ -700,6 +746,7 @@ mod tests {
                 fn f<A: Bit, B: Bit, C: Bit>()
                 where
                     A: BitAnd<<B as BitOr<C>>::Output, Output = C>,
+                    <A as BitAnd<<B as BitOr<C>>::Output>>::Output: Cmp<C>,
                     <A as BitAnd<<B as BitOr<C>>::Output>>::Output: IsEqual<C>,
                     A: BitAnd<<B as BitOr<C>>::Output>,
                     B: BitOr<C>,
@@ -725,9 +772,11 @@ mod tests {
                 fn f<B: Bit>()
                 where
                     B0: IsEqual<<B as Not>::Output, Output = B1>,
+                    B0: Cmp<<B as Not>::Output>,
                     B0: IsEqual<<B as Not>::Output>,
                     B: Not,
                     B1: IsEqual<B, Output = B1>,
+                    B1: Cmp<B>,
                     B1: IsEqual<B>,
                 {
                 }
@@ -751,8 +800,10 @@ mod tests {
                 fn f<Six: Unsigned, Zero: Unsigned>()
                 where
                     U6: IsEqual<Six, Output = B1>,
+                    U6: Cmp<Six>,
                     U6: IsEqual<Six>,
                     U0: IsEqual<Zero, Output = B1>,
+                    U0: Cmp<Zero>,
                     U0: IsEqual<Zero>,
                 {
                 }
@@ -776,6 +827,7 @@ mod tests {
                 fn f<A: Unsigned, B: Unsigned>()
                 where
                     A: Add<B, Output = U3>,
+                    <A as Add<B>>::Output: Cmp<U3>,
                     <A as Add<B>>::Output: IsEqual<U3>,
                     A: Add<B>,
                 {
@@ -800,6 +852,8 @@ mod tests {
                 fn f<A: Unsigned, B: Unsigned>()
                 where
                     A: IsLess<B, Output = B1>,
+                    A: Cmp<B>,
+                    A: IsLessOrEqual<B>,
                     A: IsLess<B>,
                 {
                 }
@@ -823,6 +877,8 @@ mod tests {
                 fn f<A: Unsigned, B: Unsigned>()
                 where
                     A: IsGreater<B, Output = B1>,
+                    A: Cmp<B>,
+                    A: IsGreaterOrEqual<B>,
                     A: IsGreater<B>,
                 {
                 }
@@ -846,6 +902,7 @@ mod tests {
                 fn f<A: Unsigned, B: Unsigned>()
                 where
                     A: IsLessOrEqual<B, Output = B1>,
+                    A: Cmp<B>,
                     A: IsLessOrEqual<B>,
                 {
                 }
@@ -869,6 +926,7 @@ mod tests {
                 fn f<A: Unsigned, B: Unsigned>()
                 where
                     A: IsGreaterOrEqual<B, Output = B1>,
+                    A: Cmp<B>,
                     A: IsGreaterOrEqual<B>,
                 {
                 }
@@ -892,6 +950,7 @@ mod tests {
                 fn f<A: Unsigned, B: Unsigned>()
                 where
                     A: IsNotEqual<B, Output = B1>,
+                    A: Cmp<B>,
                     A: IsNotEqual<B>,
                 {
                 }
