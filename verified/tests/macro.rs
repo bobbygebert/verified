@@ -1,355 +1,343 @@
 mod compile;
 use compile::Compile;
+use std::ops::{Add, BitAnd, BitOr, BitXor, Not};
 use verified::*;
+
+const TRUE: B1 = B1;
+const FALSE: B0 = B0;
 
 #[test]
 fn can_verify_single_bool_identity_clause() {
     #[verify]
-    fn f<B: Bool>()
+    fn f<B: Bit>(_: B)
     where
         _: Verify<{ B }>,
     {
     }
-    f::<True>();
+    f(TRUE);
 }
 
 #[test]
 fn can_verify_multiple_bool_identity_clauses() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
         _: Verify<{ A }, { B }>,
     {
     }
-    f::<True, True>();
+    f(TRUE, TRUE);
 }
 
 #[test]
 fn can_verify_bool_equality_clause() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
         _: Verify<{ A == B }>,
     {
     }
-    f::<False, False>();
+    f(FALSE, FALSE);
 }
 
 #[test]
 fn can_verify_bool_and_clause() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
-        _: Verify<{ A && B }, { A & B }>,
+        _: Verify<{ A & B }>,
     {
     }
-    f::<True, True>();
+    f(TRUE, TRUE);
 }
 
 #[test]
 fn can_verify_bool_or_clause() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
-        _: Verify<{ A || B }, { A | B }>,
+        _: Verify<{ A | B }>,
     {
     }
-    f::<False, True>();
-    f::<True, False>();
-    f::<True, True>();
+    f(FALSE, TRUE);
+    f(TRUE, TRUE);
+    f(TRUE, TRUE);
 }
 
 #[test]
 fn can_verify_bool_xor_clause() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
         _: Verify<{ A ^ B }>,
     {
     }
-    f::<False, True>();
-    f::<True, False>();
+    f(FALSE, TRUE);
+    f(TRUE, FALSE);
 }
 
 #[test]
 fn can_verify_bool_not_clause() {
     #[verify]
-    fn f<B: Bool>()
+    fn f<B: Bit>(_: B)
     where
         _: Verify<{ !B }>,
     {
     }
-    f::<False>();
+    f(FALSE);
 }
 
 #[test]
 fn can_verify_parenthesised_clause() {
     #[verify]
-    fn f<B: Bool>()
+    fn f<B: Bit>(_: B)
     where
         _: Verify<{ (B) }>,
     {
     }
-    f::<True>();
+    f(TRUE);
 }
 
 #[test]
 fn can_verify_nested_binary_clauses() {
     #[verify]
-    fn f<A: Bool, B: Bool, C: Bool>()
+    fn f<A: Bit, B: Bit, C: Bit>(_: A, _: B, _: C)
     where
-        _: Verify<{ (A && (B || C)) == C }>,
+        _: Verify<{ (A & (B | C)) == C }>,
     {
     }
-    f::<True, False, False>();
+    f(TRUE, FALSE, FALSE);
 }
 
 #[test]
 fn can_verify_nested_unary_clause() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
-        _: Verify<{ !(A && B) }>,
+        _: Verify<{ !(A & B) }>,
     {
     }
-    f::<True, False>();
+    f(TRUE, FALSE);
 }
 
 #[test]
 fn can_verify_bool_less_than_clauses() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
         _: Verify<{ A < B }>,
     {
     }
-    f::<False, True>();
+    f(FALSE, TRUE);
 }
 
 #[test]
 fn can_verify_bool_greater_than_clauses() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
         _: Verify<{ A > B }>,
     {
     }
-    f::<True, False>();
+    f(TRUE, FALSE);
 }
 
 #[test]
 fn can_verify_bool_less_equal_clauses() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
         _: Verify<{ A <= B }>,
     {
     }
-    f::<False, True>();
-    f::<False, False>();
-    f::<True, True>();
+    f(FALSE, TRUE);
+    f(FALSE, FALSE);
+    f(TRUE, TRUE);
 }
 
 #[test]
 fn can_verify_bool_greater_equal_clauses() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
         _: Verify<{ A >= B }>,
     {
     }
-    f::<True, False>();
-    f::<False, False>();
-    f::<True, True>();
+    f(TRUE, FALSE);
+    f(FALSE, FALSE);
+    f(TRUE, TRUE);
 }
 
 #[test]
 fn can_verify_bool_not_equal_clauses() {
     #[verify]
-    fn f<A: Bool, B: Bool>()
+    fn f<A: Bit, B: Bit>(_: A, _: B)
     where
         _: Verify<{ A != B }>,
     {
     }
-    f::<True, False>();
+    f(TRUE, FALSE);
 }
 
 #[test]
 fn can_verify_usize_bitand_clauses() {
     #[verify]
-    fn f<A: Usize, B: Usize, C: Usize>()
+    fn f<A: Unsigned, B: Unsigned, C: Unsigned>(_: A, _: B, _: C)
     where
         _: Verify<{ (A & B) == C }>,
     {
     }
-    f::<U<T, B1>, U<T, B0>, U<T, B0>>();
-    f::<U<T, B1>, U<T, B1>, U<T, B1>>();
+    f(U2::default(), U1::default(), U0::default());
+    f(U2::default(), U2::default(), U2::default());
 }
 
 #[test]
 fn can_verify_usize_bitor_clauses() {
     #[verify]
-    fn f<A: Usize, B: Usize, C: Usize>()
+    fn f<A: Unsigned, B: Unsigned, C: Unsigned>(_: A, _: B, _: C)
     where
         _: Verify<{ (A | B) == C }>,
     {
     }
-    f::<U<T, B1>, U<T, B0>, U<T, B1>>();
-    f::<U<T, B0>, U<T, B0>, U<T, B0>>();
+    f(U2::default(), U1::default(), U3::default());
+    f(U2::default(), U2::default(), U2::default());
 }
 
 #[test]
 fn can_verify_usize_bitxor_clauses() {
     #[verify]
-    fn f<A: Usize, B: Usize, C: Usize>()
+    fn f<A: Unsigned, B: Unsigned, C: Unsigned>(_: A, _: B, _: C)
     where
         _: Verify<{ (A ^ B) == C }>,
     {
     }
-    f::<U<T, B1>, U<T, B0>, U<T, B1>>();
-    f::<U<T, B0>, U<T, B0>, U<T, B0>>();
-    f::<U<T, B1>, U<T, B1>, U<T, B0>>();
+    f(U2::default(), U1::default(), U3::default());
+    f(U0::default(), U0::default(), U0::default());
+    f(U2::default(), U2::default(), U0::default());
 }
 
 #[test]
 fn can_verify_bool_literals() {
     #[verify]
-    fn f<B: Bool>()
+    fn f<B: Bit>(_: B)
     where
         _: Verify<{ B == false }, { B == !true }>,
     {
     }
-    f::<False>();
+    f(FALSE);
 }
 
 #[test]
 fn can_verify_usize_literals() {
     #[verify]
-    fn f<Six: Usize, Zero: Usize>()
+    fn f<Six: Unsigned, Zero: Unsigned>(_: Six, _: Zero)
     where
         _: Verify<{ Six == 6 }, { Zero == 0 }>,
     {
     }
-    f::<U<U<U<T, B1>, B1>, B0>, U<T, B0>>();
+    f(U6::default(), U0::default());
 }
 
 #[test]
 fn can_verify_usize_addition_clauses() {
     #[verify]
-    fn f<A: Usize, B: Usize>()
+    fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
     where
         _: Verify<{ (A + B) == 5 }>,
     {
     }
-    f::<U<U<T, B1>, B0>, U<U<T, B1>, B1>>();
+    f(U2::default(), U3::default());
 }
 
 #[test]
 fn can_verify_usize_less_than_clauses() {
     #[verify]
-    fn f<A: Usize, B: Usize>()
+    fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
     where
         _: Verify<{ A < B }>,
     {
     }
-    f::<U<U<T, B1>, B0>, U<U<T, B1>, B1>>();
+    f(U2::default(), U3::default());
 }
 
 #[test]
 fn can_verify_usize_greater_than_clauses() {
     #[verify]
-    fn f<A: Usize, B: Usize>()
+    fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
     where
         _: Verify<{ A > B }>,
     {
     }
-    f::<U<U<T, B1>, B1>, U<U<T, B1>, B0>>();
+    f(U3::default(), U2::default());
 }
 
 #[test]
 fn can_verify_usize_less_equal_clauses() {
     #[verify]
-    fn f<A: Usize, B: Usize>()
+    fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
     where
         _: Verify<{ A <= B }>,
     {
     }
-    f::<U<U<T, B1>, B0>, U<U<T, B1>, B1>>();
-    f::<U<U<T, B1>, B1>, U<U<T, B1>, B1>>();
+    f(U2::default(), U3::default());
+    f(U3::default(), U3::default());
 }
 
 #[test]
 fn can_verify_usize_greater_equal_clauses() {
     #[verify]
-    fn f<A: Usize, B: Usize>()
+    fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
     where
         _: Verify<{ A >= B }>,
     {
     }
-    f::<U<U<T, B1>, B1>, U<U<T, B1>, B0>>();
-    f::<U<U<T, B1>, B1>, U<U<T, B1>, B1>>();
+    f(U3::default(), U2::default());
+    f(U3::default(), U3::default());
 }
 
 #[test]
 fn can_verify_usize_not_equal_clauses() {
     #[verify]
-    fn f<A: Usize, B: Usize>()
+    fn f<A: Unsigned, B: Unsigned>(_: A, _: B)
     where
         _: Verify<{ A != B }>,
     {
     }
-    f::<U<U<T, B1>, B1>, U<U<T, B1>, B0>>();
+    f(U3::default(), U2::default());
 }
 
 #[test]
 fn can_verify_result_simple_addition_in_function_body_lhs() {
     #[verify]
-    fn f<A: Usize, B: Usize, C: Usize>(a: A, b: B) -> C
+    fn f<A: Unsigned, B: Unsigned, C: Unsigned>(a: A, b: B) -> C
     where
         _: Verify<{ A + B == C }>,
     {
         a + b
     }
-    let _: Literal!(3) = f(<Literal!(1)>::new(), <Literal!(2)>::new());
+    let _: U3 = f(U1::default(), U2::default());
 }
 
 #[test]
 fn can_verify_result_simple_addition_in_function_body_rhs() {
     #[verify]
-    fn f<A: Usize, B: Usize, C: Usize>(a: A, b: B) -> C
+    fn f<A: Unsigned, B: Unsigned, C: Unsigned>(a: A, b: B) -> C
     where
         _: Verify<{ C == A + B }>,
     {
         a + b
     }
-    let _: Literal!(3) = f(<Literal!(1)>::new(), <Literal!(2)>::new());
-}
-
-#[test]
-fn can_construct_bool_literals() {
-    assert_eq!(<Literal!(true)>::new(), True);
-    assert_eq!(<Literal!(false)>::new(), False);
-}
-
-#[test]
-fn can_construct_usize_literals() {
-    assert_eq!(<Literal!(0)>::new(), <U<T, B0>>::default());
-    assert_eq!(<Literal!(1)>::new(), <U<T, B1>>::default());
-    assert_eq!(
-        <Literal!(8)>::new(),
-        <U<U<U<U<T, B1>, B0>, B0>, B0>>::default()
-    );
+    let _: U3 = f(U1::default(), U2::default());
 }
 
 #[test]
 fn can_verify_bools_without_braces() {
     #[verify]
-    fn f<B: Bool>()
+    fn f<B: Bit>(_: B)
     where
         _: Verify<B>,
     {
     }
-    f::<True>();
+    f(TRUE);
 }
 
 #[test]
@@ -357,41 +345,13 @@ fn can_verify_bools_without_braces() {
 #[allow(non_snake_case)]
 fn compilation_tests() {
     Compile(
-        "False_is_not_true.rs",
-        "
-        use verified::*;
-        #[verify]
-        fn f<B: Bool>()
-        where
-            _: Verify<{ B }>
-        {}
-
-        f::<False>();
-        ",
-    )
-    .and_expect(
-        "
-        error[E0271]: type mismatch resolving `<verified::bool::False as verified::ops::Same<verified::bool::True>>::Output == verified::bool::True`
-         --> $DIR/False_is_not_true.rs:9:5
-          |
-        3 |     #[verify]
-          |     --------- required by this bound in `main::f`
-        4 |     fn f<B: Bool>()
-          |        -
-        ...
-        9 |     f::<False>();
-          |     ^^^^^^^^^^ expected struct `verified::bool::True`, found struct `verified::bool::False`
-        "
-    );
-
-    Compile(
         "Error_when_no_Verify_clause_found.rs",
         "
         use verified::*;
         #[verify]
         fn _f<B>()
         where
-            B: Bool
+            B: Bit
         {}
         ",
     )
@@ -401,8 +361,8 @@ fn compilation_tests() {
          --> $DIR/Error_when_no_Verify_clause_found.rs:5:5
           |
         5 | /     where
-        6 | |         B: Bool
-          | |_______________^
+        6 | |         B: Bit
+          | |______________^
         ",
     );
 
@@ -411,7 +371,7 @@ fn compilation_tests() {
         "
         use verified::*;
         #[verify]
-        fn _f<B: Bool>()
+        fn _f<B: Bit>()
         where
             _: Verify<{ B }>,
             _: Verify<{ B }>,
@@ -433,7 +393,7 @@ fn compilation_tests() {
         "
         use verified::*;
         #[verify]
-        fn _f<B: Bool>()
+        fn _f<B: Bit>()
         where
             _: SomethingElse<{ B }>,
         {}
@@ -454,7 +414,7 @@ fn compilation_tests() {
         "
         use verified::*;
         #[verify]
-        fn _f<B: Bool>()
+        fn _f<B: Bit>()
         where
             _: Verify(B),
         {}
@@ -475,7 +435,7 @@ fn compilation_tests() {
         "
         use verified::*;
         #[verify]
-        fn _f<A: Bool, B: Bool>()
+        fn _f<A: Bit, B: Bit>()
         where
             _: Verify<{ A * B }>,
         {}
@@ -496,7 +456,7 @@ fn compilation_tests() {
         "
         use verified::*;
         #[verify]
-        fn _f<N: Usize>()
+        fn _f<N: Unsigned>()
         where
             _: Verify<{ N == \"abc\" }>,
         {}

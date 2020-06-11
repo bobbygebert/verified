@@ -293,7 +293,7 @@ impl TryFrom<Op> for syn::PredicateType {
                     (left, right) => {
                         let left: syn::Type = (left).try_into()?;
                         let right: syn::Type = (right).try_into()?;
-                        Ok(predicate! {{ #left }: { #op<#right, Output = True> }})
+                        Ok(predicate! {{ #left }: { #op<#right, Output = B1> }})
                     }
                 }
             }
@@ -301,13 +301,13 @@ impl TryFrom<Op> for syn::PredicateType {
                 let op = op_name?;
                 let left: syn::Type = (*left).try_into()?;
                 let right: syn::Type = (*right).try_into()?;
-                Ok(predicate! {{ #left }: { #op<#right, Output = True> }})
+                Ok(predicate! {{ #left }: { #op<#right, Output = B1> }})
             }
             Op::UnOp { op, left } => {
                 let left: syn::Type = (*left).try_into()?;
-                Ok(predicate! {{ #left }: { #op<Output = True> }})
+                Ok(predicate! {{ #left }: { #op<Output = B1> }})
             }
-            Op::Path(path) => Ok(predicate! {{ #path }: { Same<True, Output = True> }}),
+            Op::Path(path) => Ok(predicate! {{ #path }: { IsEqual<B1, Output = B1> }}),
         }
     }
 }
@@ -370,19 +370,16 @@ impl TryFrom<syn::Lit> for Op {
     fn try_from(lit: syn::Lit) -> syn::Result<Self> {
         match lit {
             syn::Lit::Bool(syn::LitBool { value, .. }) => Ok(Op::Path(if value {
-                syn::parse_quote!(True)
+                syn::parse_quote!(B1)
             } else {
-                syn::parse_quote!(False)
+                syn::parse_quote!(B0)
             })),
-            syn::Lit::Int(value) => Ok(Op::Path(match value.base10_parse::<usize>()? {
-                0 => syn::parse_quote!(U<T, B0>),
-                int => format!("{:b}", int)
-                    .bytes()
-                    .skip_while(|bit| *bit == '0' as u8)
-                    .fold(syn::parse_quote!(T), |msb: syn::Path, bit| {
-                        let lsb = syn::Ident::new(&format!("B{}", bit as char), value.span());
-                        syn::parse_quote!(U<#msb, #lsb>)
-                    }),
+            syn::Lit::Int(value) => Ok(Op::Path({
+                let ty = syn::Ident::new(
+                    &format!("U{}", value.base10_parse::<usize>()?),
+                    value.span(),
+                );
+                syn::parse_quote!(#ty)
             })),
             unsupported_expr => Err(syn::Error::new(
                 unsupported_expr.span(),
@@ -434,17 +431,15 @@ impl Op {
         if let Op::BinOp { op, .. } = self {
             match op {
                 syn::BinOp::Add(_) => Ok(syn::parse_quote!(Add)),
-                syn::BinOp::And(_) => Ok(syn::parse_quote!(And)),
                 syn::BinOp::BitAnd(_) => Ok(syn::parse_quote!(BitAnd)),
                 syn::BinOp::BitOr(_) => Ok(syn::parse_quote!(BitOr)),
                 syn::BinOp::BitXor(_) => Ok(syn::parse_quote!(BitXor)),
-                syn::BinOp::Eq(_) => Ok(syn::parse_quote!(Same)),
-                syn::BinOp::Ge(_) => Ok(syn::parse_quote!(Ge)),
-                syn::BinOp::Gt(_) => Ok(syn::parse_quote!(Gt)),
-                syn::BinOp::Le(_) => Ok(syn::parse_quote!(Le)),
-                syn::BinOp::Lt(_) => Ok(syn::parse_quote!(Lt)),
-                syn::BinOp::Ne(_) => Ok(syn::parse_quote!(Ne)),
-                syn::BinOp::Or(_) => Ok(syn::parse_quote!(Or)),
+                syn::BinOp::Eq(_) => Ok(syn::parse_quote!(IsEqual)),
+                syn::BinOp::Ge(_) => Ok(syn::parse_quote!(IsGreaterOrEqual)),
+                syn::BinOp::Gt(_) => Ok(syn::parse_quote!(IsGreater)),
+                syn::BinOp::Le(_) => Ok(syn::parse_quote!(IsLessOrEqual)),
+                syn::BinOp::Lt(_) => Ok(syn::parse_quote!(IsLess)),
+                syn::BinOp::Ne(_) => Ok(syn::parse_quote!(IsNotEqual)),
                 unsupported_expr => Err(syn::Error::new(
                     unsupported_expr.span(),
                     "unsupported logical expression",
@@ -497,11 +492,11 @@ mod tests {
     }
 
     #[test]
-    fn Bool_identity_clause_is_converted_bound_of_Same_True() {
+    fn Bit_identity_clause_is_converted_bound_of_IsEqual_B1() {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<B: Bool>()
+                fn f<B: Bit>()
                 where
                     _: Verify<{ B }>,
                 {
@@ -509,9 +504,9 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<B: Bool>()
+                fn f<B: Bit>()
                 where
-                    B: Same<True, Output = True>
+                    B: IsEqual<B1, Output = B1>
                 {
                 }
             },
@@ -519,11 +514,11 @@ mod tests {
     }
 
     #[test]
-    fn Multiple_Bool_identity_clauses_are_converted_to_multiple_bounds() {
+    fn Multiple_Bit_identity_clauses_are_converted_to_multiple_bounds() {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
                     _: Verify<{ A }, { B }>,
                 {
@@ -531,10 +526,10 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
-                    A: Same<True, Output = True>,
-                    B: Same<True, Output = True>
+                    A: IsEqual<B1, Output = B1>,
+                    B: IsEqual<B1, Output = B1>
                 {
                 }
             },
@@ -542,11 +537,11 @@ mod tests {
     }
 
     #[test]
-    fn Bool_equality_clause_is_converted_to_Same_bound() {
+    fn Bit_equality_clause_is_converted_to_IsEqual_bound() {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
                     _: Verify<{ A == B }>,
                 {
@@ -554,10 +549,10 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
-                    A: Same<B, Output = True>,
-                    A: Same<B>,
+                    A: IsEqual<B, Output = B1>,
+                    A: IsEqual<B>,
                 {
                 }
             },
@@ -565,23 +560,21 @@ mod tests {
     }
 
     #[test]
-    fn Bool_and_clause_is_converted_to_And_bound_on_BinOp() {
+    fn Bit_and_clause_is_converted_to_And_bound_on_BinOp() {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
-                    _: Verify<{ A && B }, { A & B }>,
+                    _: Verify<{ A & B }>,
                 {
                 }
             },
             expect: syn::ItemFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
-                    A: And<B, Output = True>,
-                    A: And<B>,
-                    A: BitAnd<B, Output = True>,
+                    A: BitAnd<B, Output = B1>,
                     A: BitAnd<B>,
                 {
                 }
@@ -590,23 +583,21 @@ mod tests {
     }
 
     #[test]
-    fn Bool_or_clause_is_converted_to_Or_bound_on_BinOp() {
+    fn Bit_or_clause_is_converted_to_Or_bound_on_BinOp() {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
-                    _: Verify<{ A || B }, { A | B }>,
+                    _: Verify<{ A | B }>,
                 {
                 }
             },
             expect: syn::ItemFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
-                    A: Or<B, Output = True>,
-                    A: Or<B>,
-                    A: BitOr<B, Output = True>,
+                    A: BitOr<B, Output = B1>,
                     A: BitOr<B>,
                 {
                 }
@@ -615,11 +606,11 @@ mod tests {
     }
 
     #[test]
-    fn Bool_xor_clause_is_converted_to_Xor_bound_on_BinOp() {
+    fn Bit_xor_clause_is_converted_to_Xor_bound_on_BinOp() {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
                     _: Verify<{ A ^ B }>,
                 {
@@ -627,9 +618,9 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
-                    A: BitXor<B, Output = True>,
+                    A: BitXor<B, Output = B1>,
                     A: BitXor<B>,
                 {
                 }
@@ -638,11 +629,11 @@ mod tests {
     }
 
     #[test]
-    fn Bool_not_clause_is_converted_to_Same_bound_on_BitXor_Output() {
+    fn Bit_not_clause_is_converted_to_IsEqual_bound_on_BitXor_Output() {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<B: Bool>()
+                fn f<B: Bit>()
                 where
                     _: Verify<{ !B }>,
                 {
@@ -650,9 +641,9 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<B: Bool>()
+                fn f<B: Bit>()
                 where
-                    B: Not<Output = True>,
+                    B: Not<Output = B1>,
                     B: Not,
                 {
                 }
@@ -661,11 +652,11 @@ mod tests {
     }
 
     #[test]
-    fn parenthesized_Bool_clauses_are_unwrapped() {
+    fn parenthesized_Bit_clauses_are_unwrapped() {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<B: Bool>()
+                fn f<B: Bit>()
                 where
                     _: Verify<{ (!B) }>,
                 {
@@ -673,9 +664,9 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<B: Bool>()
+                fn f<B: Bit>()
                 where
-                    B: Not<Output = True>,
+                    B: Not<Output = B1>,
                     B: Not,
                 {
                 }
@@ -688,19 +679,19 @@ mod tests {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
-                    _: Verify<{ !(A && B) }>,
+                    _: Verify<{ !(A & B) }>,
                 {
                 }
             },
             expect: syn::ItemFn
             {
-                fn f<A: Bool, B: Bool>()
+                fn f<A: Bit, B: Bit>()
                 where
-                    <A as And<B>>::Output: Not<Output = True>,
-                    <A as And<B>>::Output: Not,
-                    A: And<B>
+                    <A as BitAnd<B>>::Output: Not<Output = B1>,
+                    <A as BitAnd<B>>::Output: Not,
+                    A: BitAnd<B>
                 {
                 }
             },
@@ -712,20 +703,20 @@ mod tests {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Bool, B: Bool, C: Bool>()
+                fn f<A: Bit, B: Bit, C: Bit>()
                 where
-                    _: Verify<{ (A && (B || C)) == C }>,
+                    _: Verify<{ (A & (B | C)) == C }>,
                 {
                 }
             },
             expect: syn::ItemFn
             {
-                fn f<A: Bool, B: Bool, C: Bool>()
+                fn f<A: Bit, B: Bit, C: Bit>()
                 where
-                    A: And<<B as Or<C>>::Output, Output = C>,
-                    <A as And<<B as Or<C>>::Output>>::Output: Same<C>,
-                    A: And<<B as Or<C>>::Output>,
-                    B: Or<C>,
+                    A: BitAnd<<B as BitOr<C>>::Output, Output = C>,
+                    <A as BitAnd<<B as BitOr<C>>::Output>>::Output: IsEqual<C>,
+                    A: BitAnd<<B as BitOr<C>>::Output>,
+                    B: BitOr<C>,
                 {
                 }
             },
@@ -733,11 +724,11 @@ mod tests {
     }
 
     #[test]
-    fn bool_literals_converted_to_False_or_True() {
+    fn bool_literals_converted_to_B0_or_B1() {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<B: Bool>()
+                fn f<B: Bit>()
                 where
                     _: Verify<{ false == !B }, { true == B }>,
                 {
@@ -745,13 +736,13 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<B: Bool>()
+                fn f<B: Bit>()
                 where
-                    False: Same<<B as Not>::Output, Output = True>,
-                    False: Same<<B as Not>::Output>,
+                    B0: IsEqual<<B as Not>::Output, Output = B1>,
+                    B0: IsEqual<<B as Not>::Output>,
                     B: Not,
-                    True: Same<B, Output = True>,
-                    True: Same<B>,
+                    B1: IsEqual<B, Output = B1>,
+                    B1: IsEqual<B>,
                 {
                 }
             },
@@ -759,11 +750,11 @@ mod tests {
     }
 
     #[test]
-    fn usize_literals_converted_to_Usize_U_T_B1_B0() {
+    fn usize_literals_converted_to_U() {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<Six: Usize, Zero: Usize>()
+                fn f<Six: Unsigned, Zero: Unsigned>()
                 where
                     _: Verify<{ 6 == Six }, { 0 == Zero }>,
                 {
@@ -771,12 +762,12 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<Six: Usize, Zero: Usize>()
+                fn f<Six: Unsigned, Zero: Unsigned>()
                 where
-                    U<U<U<T, B1>, B1>, B0>: Same<Six, Output = True>,
-                    U<U<U<T, B1>, B1>, B0>: Same<Six>,
-                    U<T, B0>: Same<Zero, Output = True>,
-                    U<T, B0>: Same<Zero>,
+                    U6: IsEqual<Six, Output = B1>,
+                    U6: IsEqual<Six>,
+                    U0: IsEqual<Zero, Output = B1>,
+                    U0: IsEqual<Zero>,
                 {
                 }
             },
@@ -788,7 +779,7 @@ mod tests {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
                     _: Verify<{ (A + B) == 3 }>,
                 {
@@ -796,10 +787,10 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
-                    A: Add<B, Output = U<U<T, B1>, B1>>,
-                    <A as Add<B>>::Output: Same<U<U<T, B1>, B1>>,
+                    A: Add<B, Output = U3>,
+                    <A as Add<B>>::Output: IsEqual<U3>,
                     A: Add<B>,
                 {
                 }
@@ -812,7 +803,7 @@ mod tests {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
                     _: Verify<{ A < B }>,
                 {
@@ -820,10 +811,10 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
-                    A: Lt<B, Output = True>,
-                    A: Lt<B>,
+                    A: IsLess<B, Output = B1>,
+                    A: IsLess<B>,
                 {
                 }
             },
@@ -835,7 +826,7 @@ mod tests {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
                     _: Verify<{ A > B }>,
                 {
@@ -843,10 +834,10 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
-                    A: Gt<B, Output = True>,
-                    A: Gt<B>,
+                    A: IsGreater<B, Output = B1>,
+                    A: IsGreater<B>,
                 {
                 }
             },
@@ -858,7 +849,7 @@ mod tests {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
                     _: Verify<{ A <= B }>,
                 {
@@ -866,10 +857,10 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
-                    A: Le<B, Output = True>,
-                    A: Le<B>,
+                    A: IsLessOrEqual<B, Output = B1>,
+                    A: IsLessOrEqual<B>,
                 {
                 }
             },
@@ -881,7 +872,7 @@ mod tests {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
                     _: Verify<{ A >= B }>,
                 {
@@ -889,10 +880,10 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
-                    A: Ge<B, Output = True>,
-                    A: Ge<B>,
+                    A: IsGreaterOrEqual<B, Output = B1>,
+                    A: IsGreaterOrEqual<B>,
                 {
                 }
             },
@@ -904,7 +895,7 @@ mod tests {
         parse_test! {
             parse: VerifiedFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
                     _: Verify<{ A != B }>,
                 {
@@ -912,10 +903,10 @@ mod tests {
             },
             expect: syn::ItemFn
             {
-                fn f<A: Usize, B: Usize>()
+                fn f<A: Unsigned, B: Unsigned>()
                 where
-                    A: Ne<B, Output = True>,
-                    A: Ne<B>,
+                    A: IsNotEqual<B, Output = B1>,
+                    A: IsNotEqual<B>,
                 {
                 }
             },

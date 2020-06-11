@@ -12,41 +12,30 @@
 //! use verified::*;
 //!
 //! #[derive(Default)]
-//! struct Collection<E, Size: Usize> {
+//! struct Collection<E, Size: Unsigned> {
 //!     elements: Vec<E>,
 //!     size: Size,
 //! }
 //!
 //! #[verify]
-//! fn really_really_really_slow_routine<E, Size: Usize>(working_set: Collection<E, Size>)
+//! fn slow_routine<E, Size: Unsigned>(working_set: Collection<E, Size>)
 //! where
 //!     // Restrict the size of the working set.
 //!     _: Verify<{ Size < 128 }>
 //! {
-//!     todo! {}
+//!     // TODO
 //! }
-//!
-//! type U128 = U<U<U<U<U<U<U<U<T, B1>, B0>, B0>, B0>, B0>, B0>, B0>, B0>;
-//! type U127 = U<U<U<U<U<U<U<T, B0>, B1>, B1>, B1>, B1>, B1>, B1>;
 //!
 //! fn main() {
 //!     // No problem here...
-//!     really_really_really_slow_routine::<String, U127>(Default::default());
+//!     slow_routine::<String, U127>(Default::default());
 //!
 //!     // XXX: Does not compile because our working set is one element too large.
-//!     really_really_really_slow_routine::<String, U128>(Default::default());
+//!     slow_routine::<String, U128>(Default::default());
 //! }
 //! ```
-pub mod bool;
-pub mod ops;
-pub mod usize;
-pub use crate::bool::{Bool, False, True};
-pub use crate::ops::{
-    And, BitAnd, BitOr, BitXor, Compare, Equal, Ge, Greater, Gt, Le, Less, Lt, Ne, Not, Or,
-    Ordering, Same,
-};
-pub use crate::usize::{Add, Usize, B0, B1, T, U};
-pub use verify_macro::{verify, Literal};
+pub use typenum::*;
+pub use verify_macro::verify;
 
 #[cfg(test)]
 mod tests {
