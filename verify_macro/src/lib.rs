@@ -25,25 +25,6 @@ fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
     Ok(verified_fn.item.into_token_stream().into())
 }
 
-//  _     _ _                 _
-// | |   (_) |_ ___ _ __ __ _| |
-// | |   | | __/ _ \ '__/ _` | |
-// | |___| | ||  __/ | | (_| | |
-// |_____|_|\__\___|_|  \__,_|_|
-//  FIGLET: Literal
-
-#[allow(non_snake_case)]
-#[proc_macro]
-pub fn Literal(arg: TokenStream) -> TokenStream {
-    match syn::parse::<syn::Lit>(arg)
-        .and_then(Op::try_from)
-        .and_then(syn::Type::try_from)
-    {
-        Ok(item) => item.to_token_stream().into(),
-        Err(e) => e.to_compile_error().into(),
-    }
-}
-
 //  ____                _
 // |  _ \ __ _ _ __ ___(_)_ __   __ _
 // | |_) / _` | '__/ __| | '_ \ / _` |
