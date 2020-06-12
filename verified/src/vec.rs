@@ -43,9 +43,7 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
     where
         _: Verify<{ Size > 0 }, { NewSize == Size - 1 }>,
     {
-        let Self(_, mut v) = self;
-        let t = v.pop().unwrap();
-        (Vec(Default::default(), v), t)
+        self.into()
     }
 
     // TODO: Implement support for logic in types outside of where clauses.
@@ -54,9 +52,7 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
     where
         _: Verify<{ NewSize == Size + 1 }>,
     {
-        let Self(_, mut v) = self;
-        v.push(e);
-        Vec(Default::default(), v)
+        (self, e).into()
     }
 
     // TODO: Implement support for logic in types outside of where clauses.
@@ -157,6 +153,30 @@ where
         let Self(s, mut v) = self;
         v.append(&mut ov);
         Vec(s + os, v)
+    }
+}
+
+#[verify]
+impl<Size: Unsigned, NewSize: Unsigned, Element> std::convert::From<(Vec<Size, Element>, Element)>
+    for Vec<NewSize, Element>
+where
+    _: Verify<{ NewSize == Size + 1 }>,
+{
+    fn from((Vec(_, mut v), e): (Vec<Size, Element>, Element)) -> Self {
+        v.push(e);
+        Self(Default::default(), v)
+    }
+}
+
+#[verify]
+impl<Size: Unsigned, NewSize: Unsigned, Element> std::convert::From<Vec<Size, Element>>
+    for (Vec<NewSize, Element>, Element)
+where
+    _: Verify<{ Size > 0 }, { NewSize == Size - 1 }>,
+{
+    fn from(Vec(_, mut v): Vec<Size, Element>) -> Self {
+        let e = v.pop().unwrap();
+        (Vec(Default::default(), v), e)
     }
 }
 
