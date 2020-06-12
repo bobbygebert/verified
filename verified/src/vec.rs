@@ -25,6 +25,7 @@ impl<Element> Vec<U0, Element> {
 }
 
 impl<Size: Unsigned, Element> Vec<Size, Element> {
+    // TODO: Implement support for logic in types outside of where clauses.
     #[verify]
     pub fn append<OtherSize: Unsigned, NewSize: Unsigned>(
         self,
@@ -36,6 +37,7 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
         self + other
     }
 
+    // TODO: Implement support for logic in types outside of where clauses.
     #[verify]
     pub fn pop<NewSize: Unsigned>(self) -> (Vec<NewSize, Element>, Element)
     where
@@ -46,6 +48,7 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
         (Vec(Default::default(), v), t)
     }
 
+    // TODO: Implement support for logic in types outside of where clauses.
     #[verify]
     pub fn push<NewSize: Unsigned>(self, e: Element) -> Vec<NewSize, Element>
     where
@@ -56,6 +59,7 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
         Vec(Default::default(), v)
     }
 
+    // TODO: Implement support for logic in types outside of where clauses.
     #[verify]
     pub fn insert<Index: Unsigned, NewSize: Unsigned>(
         self,
@@ -70,6 +74,7 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
         Vec(Default::default(), v)
     }
 
+    // TODO: Implement support for logic in types outside of where clauses.
     #[verify]
     pub fn remove<Index: Unsigned, NewSize: Unsigned>(
         self,
@@ -83,6 +88,7 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
         (Vec(Default::default(), v), e)
     }
 
+    // TODO: Implement support for logic in types outside of where clauses.
     #[verify]
     pub fn truncate<NewSize: Unsigned>(self, _: NewSize) -> Vec<NewSize, Element>
     where
@@ -95,6 +101,7 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
 }
 
 impl<Size: Unsigned, Element: Clone> Vec<Size, Element> {
+    // TODO: Implement support for logic in types outside of where clauses.
     pub fn resize<NewSize: Unsigned>(self, _: NewSize, default: Element) -> Vec<NewSize, Element> {
         let Self(_, mut v) = self;
         v.resize(NewSize::to_usize(), default);
