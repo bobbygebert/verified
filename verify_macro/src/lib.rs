@@ -56,55 +56,9 @@ impl TryFrom<syn::ItemFn> for VerifiedFn {
     fn try_from(mut item: syn::ItemFn) -> syn::Result<Self> {
         let mut where_clause = item.sig.generics.make_where_clause();
         replace_verify_bound(&mut where_clause)?;
+        // TODO: Support types in other locations
         if let syn::ReturnType::Type(_, ref mut ty) = &mut item.sig.output {
-            match ty.as_mut() {
-                syn::Type::Path(syn::TypePath {
-                    path: syn::Path { segments, .. },
-                    ..
-                }) if segments.len() > 0 => {
-                    let ty = segments.last_mut().unwrap();
-
-                    let logic: syn::Result<Logic> = ty.arguments.clone().try_into();
-                    if logic.is_err() {
-                        panic!("{}", logic.err().unwrap())
-                    }
-                    let logic = logic?;
-                    let new_generics: &Vec<syn::Type> = &logic
-                        .clauses
-                        .clone()
-                        .into_iter()
-                        .map(|clause| {
-                            TryInto::<Op>::try_into(clause)
-                                .and_then(|op| TryInto::<syn::Type>::try_into(op))
-                        })
-                        .collect::<syn::Result<Vec<_>>>()?;
-                    let ident = &ty.ident;
-                    *ty = syn::parse_quote!(#ident<#(#new_generics),*>);
-
-                    let new_predicates = logic
-                        .clauses
-                        .into_iter()
-                        .filter(
-                            // Unwrap because we would have errored earlier.
-                            |clause| match TryInto::<Op>::try_into(clause.clone()).unwrap() {
-                                Op::BinOp { .. } | Op::UnOp { .. } => true,
-                                Op::Path(_) => false,
-                            },
-                        )
-                        .map(|clause| {
-                            Ok(TryInto::<Vec<syn::PredicateType>>::try_into(clause)?
-                                .into_iter()
-                                // Hack: Skip first bound `Lhs: op<Rhs, Ouput = B1>`.
-                                .skip(1)
-                                .map(|ty| syn::WherePredicate::Type(ty)))
-                        })
-                        .collect::<syn::Result<Vec<_>>>()?;
-                    where_clause
-                        .predicates
-                        .extend(new_predicates.into_iter().flatten());
-                }
-                _ => (),
-            }
+            Translator::new(&mut where_clause).translate(ty.as_mut())?;
         }
         let item = syn::Item::Fn(item);
         Ok(Self { item })
@@ -159,6 +113,110 @@ impl quote::ToTokens for VerifiedFn {
 impl quote::ToTokens for VerifiedImpl {
     fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
         self.item.to_tokens(out)
+    }
+}
+
+//  _____                    _       _
+// |_   _| __ __ _ _ __  ___| | __ _| |_ ___  _ __
+//   | || '__/ _` | '_ \/ __| |/ _` | __/ _ \| '__|
+//   | || | | (_| | | | \__ \ | (_| | || (_) | |
+//   |_||_|  \__,_|_| |_|___/_|\__,_|\__\___/|_|
+//  FIGLET: Translator
+
+struct Translator<'g> {
+    where_clause: &'g mut syn::WhereClause,
+}
+
+impl<'g> Translator<'g> {
+    fn new(where_clause: &'g mut syn::WhereClause) -> Self {
+        Self { where_clause }
+    }
+
+    fn translate(&mut self, generics: &mut impl Generics) -> syn::Result<()> {
+        for generics in generics.generics().into_iter() {
+            let generics: &mut syn::PathArguments = generics;
+            let logic: Logic = generics.clone().try_into()?;
+            let new_generics: &Vec<syn::Type> = &logic
+                .clauses
+                .clone()
+                .into_iter()
+                .map(|clause| {
+                    TryInto::<Op>::try_into(clause)
+                        .and_then(|op| TryInto::<syn::Type>::try_into(op))
+                })
+                .collect::<syn::Result<Vec<_>>>()?;
+            if let syn::PathArguments::AngleBracketed(generic_args) = generics {
+                generic_args.args = std::iter::FromIterator::<syn::GenericArgument>::from_iter(
+                    new_generics.into_iter().map(|ty| syn::parse_quote!(#ty)),
+                );
+            }
+
+            self.where_clause.predicates.extend(
+                &mut logic
+                    .clauses
+                    .into_iter()
+                    .filter(
+                        // Unwrap because we would have errored earlier.
+                        |clause| match TryInto::<Op>::try_into(clause.clone()).unwrap() {
+                            Op::BinOp { .. } | Op::UnOp { .. } => true,
+                            Op::Path(_) => false,
+                        },
+                    )
+                    .map(|clause| {
+                        Ok(TryInto::<Vec<syn::PredicateType>>::try_into(clause)?
+                            .into_iter()
+                            // Hack: Skip first bound `Lhs: op<Rhs, Ouput = B1>`.
+                            .skip(1)
+                            .map(|ty| syn::WherePredicate::Type(ty)))
+                    })
+                    .collect::<syn::Result<Vec<_>>>()?
+                    .into_iter()
+                    .flatten(),
+            );
+        }
+        Ok(())
+    }
+}
+
+trait Generics {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments>;
+}
+
+// TODO: Support other types
+impl Generics for syn::Type {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        match self {
+            syn::Type::Path(ty) => ty.generics(),
+            syn::Type::Tuple(ty) => ty.generics(),
+            _ => vec![],
+        }
+    }
+}
+
+impl Generics for syn::TypePath {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        let segments = &mut self.path.segments;
+        if segments.len() > 0 {
+            segments.last_mut().unwrap().generics()
+        } else {
+            vec![]
+        }
+    }
+}
+
+impl Generics for syn::TypeTuple {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.elems
+            .iter_mut()
+            .map(|ty| ty.generics())
+            .flatten()
+            .collect()
+    }
+}
+
+impl Generics for syn::PathSegment {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        vec![&mut self.arguments]
     }
 }
 
