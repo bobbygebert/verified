@@ -25,14 +25,14 @@ impl<Element> Vec<U0, Element> {
 }
 
 impl<Size: Unsigned, Element> Vec<Size, Element> {
-    // TODO: Implement support for logic in types outside of where clauses.
     #[verify]
-    pub fn append<OtherSize: Unsigned, NewSize: Unsigned>(
+    pub fn append<OtherSize: Unsigned>(
         self,
         other: Vec<OtherSize, Element>,
-    ) -> Vec<NewSize, Element>
+    ) -> Vec<{ Size + OtherSize }, Element>
     where
-        _: Verify<{ NewSize == Size + OtherSize }>,
+        // TODO: Automatically generate bound
+        <Size as Add<OtherSize>>::Output: Unsigned,
     {
         self + other
     }
@@ -48,22 +48,22 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
 
     // TODO: Implement support for logic in types outside of where clauses.
     #[verify]
-    pub fn push<NewSize: Unsigned>(self, e: Element) -> Vec<NewSize, Element>
+    pub fn push(self, e: Element) -> Vec<{ Size + 1 }, Element>
     where
-        _: Verify<{ NewSize == Size + 1 }>,
+        // TODO: Automatically generate bound
+        <Size as Add<U1>>::Output: Unsigned,
+        <Size as Add<U1>>::Output: Cmp,
+        <Size as Add<U1>>::Output: IsEqual<<Size as Add<U1>>::Output>,
     {
         (self, e).into()
     }
 
     // TODO: Implement support for logic in types outside of where clauses.
     #[verify]
-    pub fn insert<Index: Unsigned, NewSize: Unsigned>(
-        self,
-        _: Index,
-        e: Element,
-    ) -> Vec<NewSize, Element>
+    pub fn insert<Index: Unsigned>(self, _: Index, e: Element) -> Vec<{ Size + 1 }, Element>
     where
-        _: Verify<{ NewSize == Size + 1 }>,
+        // TODO: Automatically generate bound
+        <Size as Add<U1>>::Output: Unsigned,
     {
         let Self(_, mut v) = self;
         v.insert(Index::to_usize(), e);

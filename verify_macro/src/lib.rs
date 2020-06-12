@@ -40,7 +40,7 @@ impl syn::parse::Parse for VerifiedImpl {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let mut item: syn::ItemImpl = input.parse()?;
         let mut where_clause = item.generics.make_where_clause();
-        update_where_clause(&mut where_clause)?;
+        replace_verify_bound(&mut where_clause)?;
         let item = syn::Item::Impl(item);
         Ok(Self { item })
     }
@@ -50,9 +50,72 @@ impl syn::parse::Parse for VerifiedFn {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let mut item: syn::ItemFn = input.parse()?;
         let mut where_clause = item.sig.generics.make_where_clause();
-        update_where_clause(&mut where_clause)?;
+        replace_verify_bound(&mut where_clause)?;
+        if let syn::ReturnType::Type(_, ref mut ty) = &mut item.sig.output {
+            match ty.as_mut() {
+                syn::Type::Path(syn::TypePath {
+                    path: syn::Path { segments, .. },
+                    ..
+                }) if segments.len() > 0 => {
+                    let ty = segments.last_mut().unwrap();
+
+                    let logic: syn::Result<Logic> = ty.arguments.clone().try_into();
+                    if logic.is_err() {
+                        panic!("{}", logic.err().unwrap())
+                    }
+                    let logic = logic?;
+                    let new_generics: &Vec<syn::Type> = &logic
+                        .clauses
+                        .clone()
+                        .into_iter()
+                        .map(|clause| {
+                            TryInto::<Op>::try_into(clause)
+                                .and_then(|op| TryInto::<syn::Type>::try_into(op))
+                        })
+                        .collect::<syn::Result<Vec<_>>>()?;
+                    let ident = &ty.ident;
+                    *ty = syn::parse_quote!(#ident<#(#new_generics),*>);
+
+                    let new_predicates = logic
+                        .clauses
+                        .into_iter()
+                        .filter(
+                            // Unwrap because we would have errored earlier.
+                            |clause| match TryInto::<Op>::try_into(clause.clone()).unwrap() {
+                                Op::BinOp { .. } | Op::UnOp { .. } => true,
+                                Op::Path(_) => false,
+                            },
+                        )
+                        .map(|clause| {
+                            Ok(TryInto::<Vec<syn::PredicateType>>::try_into(clause)?
+                                .into_iter()
+                                // Hack: Skip first bound `Lhs: op<Rhs, Ouput = B1>`.
+                                .skip(1)
+                                .map(|ty| syn::WherePredicate::Type(ty)))
+                        })
+                        .collect::<syn::Result<Vec<_>>>()?;
+                    where_clause
+                        .predicates
+                        .extend(new_predicates.into_iter().flatten());
+                }
+                _ => (),
+            }
+        }
         let item = syn::Item::Fn(item);
         Ok(Self { item })
+    }
+}
+
+impl TryFrom<syn::PathArguments> for Logic {
+    type Error = syn::Error;
+    fn try_from(generics: syn::PathArguments) -> syn::Result<Self> {
+        match generics {
+            syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
+                ref args,
+                ..
+            }) => Ok(syn::parse2(args.to_token_stream())?),
+            _ => Ok(Logic { clauses: vec![] }),
+        }
     }
 }
 
@@ -101,7 +164,7 @@ impl quote::ToTokens for VerifiedImpl {
 //   |_||_|  \__,_|_| |_|___/_|\__,_|\__|_|\___/|_| |_|___/
 //  FIGLET: Translations
 
-fn update_where_clause(where_clause: &mut syn::WhereClause) -> syn::Result<()> {
+fn replace_verify_bound(where_clause: &mut syn::WhereClause) -> syn::Result<()> {
     let (mut predicates, inferred_bounds): (Vec<_>, Vec<_>) = where_clause
         .clone()
         .predicates
@@ -113,6 +176,10 @@ fn update_where_clause(where_clause: &mut syn::WhereClause) -> syn::Result<()> {
             }) => false,
             _ => true,
         });
+
+    if inferred_bounds.len() == 0 {
+        return Ok(());
+    }
 
     if inferred_bounds.len() > 1 {
         return Err(syn::Error::new(
@@ -147,17 +214,7 @@ fn update_where_clause(where_clause: &mut syn::WhereClause) -> syn::Result<()> {
         Err(syn::Error::new(path.span(), "expected `Verify<_>`"))
     }?;
 
-    let clauses = if let syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
-        ref args,
-        ..
-    }) = generics
-    {
-        Ok(args)
-    } else {
-        Err(syn::Error::new(generics.span(), "expected `<_>`"))
-    }?;
-
-    let logic: Logic = syn::parse2(clauses.to_token_stream())?;
+    let logic: Logic = generics.clone().try_into()?;
 
     for clause in logic.clauses.into_iter() {
         predicates.extend(
@@ -431,7 +488,7 @@ struct Logic {
     clauses: Vec<Clause>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Clause(syn::Expr);
 
 struct ImplPredicate(Op);
