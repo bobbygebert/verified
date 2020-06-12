@@ -233,36 +233,6 @@ fn replace_verify_bound(where_clause: &mut syn::WhereClause) -> syn::Result<()> 
     Ok(())
 }
 
-macro_rules! expression {
-    (lit: $lit:ident) => {
-        syn::Expr::Lit(syn::ExprLit {
-            $lit,
-            ..
-        })
-    };
-    (path: $path:ident) => {
-        syn::Expr::Path(syn::ExprPath {
-            $path,
-            ..
-        })
-    };
-    ($expr_ty:ident, $expr:ident) => {
-        syn::Expr::Unary(syn::ExprUnary {
-            op: syn::UnOp::$expr_ty(_),
-            $expr,
-            ..
-        })
-    };
-    ($op:ident, $left:ident, $right:ident) => {
-        syn::Expr::Binary(syn::ExprBinary {
-            $left,
-            $op,
-            $right,
-            ..
-        })
-    }
-}
-
 macro_rules! predicate {
     ({$($left:tt)*}: {$($right:tt)*}) => {
         syn::PredicateType {
@@ -422,30 +392,27 @@ impl TryFrom<Op> for syn::Type {
     }
 }
 
-macro_rules! op {
-    ($op:ident, $arg:ident) => {
-        Op::UnOp {
-            op: syn::parse_quote!($op),
-            left: Box::new(Clause(*$arg).try_into()?),
-        }
-    };
-    ($op:ident, $left:ident, $right:ident) => {
-        Op::BinOp {
-            $op,
-            left: Box::new(Clause(*$left).try_into()?),
-            right: Box::new(Clause(*$right).try_into()?),
-        }
-    };
-}
-
 impl TryFrom<Clause> for Op {
     type Error = syn::Error;
     fn try_from(clause: Clause) -> syn::Result<Self> {
         match clause.0 {
-            expression!(op, left, right) => Ok(op!(op, left, right)),
-            expression!(Not, expr) => Ok(op!(Not, expr)),
-            expression!(lit: lit) => Ok(lit.try_into()?),
-            expression!(path: path) => Ok(Op::Path(path)),
+            syn::Expr::Binary(syn::ExprBinary {
+                op, left, right, ..
+            }) => Ok(Op::BinOp {
+                op,
+                left: Box::new(Clause(*left).try_into()?),
+                right: Box::new(Clause(*right).try_into()?),
+            }),
+            syn::Expr::Unary(syn::ExprUnary {
+                op: syn::UnOp::Not(_),
+                expr,
+                ..
+            }) => Ok(Op::UnOp {
+                op: syn::parse_quote!(Not),
+                left: Box::new(Clause(*expr).try_into()?),
+            }),
+            syn::Expr::Lit(syn::ExprLit { lit, .. }) => Ok(lit.try_into()?),
+            syn::Expr::Path(syn::ExprPath { path, .. }) => Ok(Op::Path(path)),
             syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok(Clause(*expr).try_into()?),
             unsupported_expr => Err(syn::Error::new(
                 unsupported_expr.span(),
