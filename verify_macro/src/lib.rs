@@ -1032,4 +1032,24 @@ mod tests {
             },
         }
     }
+
+    #[test]
+    fn can_verify_type_construction_in_fn_return_value() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Unsigned>() -> Container<{A + 1}>
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Unsigned>() -> Container<<A as Add<U1>>::Output>
+                where
+                    A: Add<U1>,
+                {
+                }
+            },
+        }
+    }
 }

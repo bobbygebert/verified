@@ -406,6 +406,21 @@ fn can_verify_bools_without_braces() {
 }
 
 #[test]
+fn can_verify_type_construction_in_fn_return_value() {
+    struct Pod<V: Unsigned>(V);
+
+    #[verify]
+    fn f<A: Unsigned>() -> Pod<{ A + 2 }>
+    where
+        A: Unsigned,
+        <A as Add<U2>>::Output: Unsigned,
+    {
+        Pod(Default::default())
+    }
+    let _: Pod<U5> = f::<U3>();
+}
+
+#[test]
 #[ignore] // TODO: figure out how to make this test pass in automation.
 #[allow(non_snake_case)]
 fn compilation_tests() {
