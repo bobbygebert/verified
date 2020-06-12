@@ -22,10 +22,15 @@ pub fn verify(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 // TODO: Clean up the branching logic here.
 fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
-    syn::parse::<VerifiedFn>(item.clone())
-        .map(|i| i.item)
-        .or_else(|_| syn::parse::<VerifiedImpl>(item).map(|i| i.item))
-        .map(|i| i.into_token_stream().into())
+    let item: syn::Item = syn::parse(item)?;
+    match item {
+        syn::Item::Fn(item) => Ok(VerifiedFn::try_from(item)?.into_token_stream().into()),
+        syn::Item::Impl(item) => Ok(VerifiedImpl::try_from(item)?.into_token_stream().into()),
+        item => Err(syn::Error::new(
+            item.span(),
+            "expected `fn` or `impl`".to_string(),
+        )),
+    }
 }
 
 //  ____                _
@@ -36,9 +41,9 @@ fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
 //                              |___/
 //  FIGLET: Parsing
 
-impl syn::parse::Parse for VerifiedImpl {
-    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
-        let mut item: syn::ItemImpl = input.parse()?;
+impl TryFrom<syn::ItemImpl> for VerifiedImpl {
+    type Error = syn::Error;
+    fn try_from(mut item: syn::ItemImpl) -> syn::Result<Self> {
         let mut where_clause = item.generics.make_where_clause();
         replace_verify_bound(&mut where_clause)?;
         let item = syn::Item::Impl(item);
@@ -46,9 +51,9 @@ impl syn::parse::Parse for VerifiedImpl {
     }
 }
 
-impl syn::parse::Parse for VerifiedFn {
-    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
-        let mut item: syn::ItemFn = input.parse()?;
+impl TryFrom<syn::ItemFn> for VerifiedFn {
+    type Error = syn::Error;
+    fn try_from(mut item: syn::ItemFn) -> syn::Result<Self> {
         let mut where_clause = item.sig.generics.make_where_clause();
         replace_verify_bound(&mut where_clause)?;
         if let syn::ReturnType::Type(_, ref mut ty) = &mut item.sig.output {
@@ -552,6 +557,20 @@ impl Op {
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
+
+    impl syn::parse::Parse for VerifiedFn {
+        fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+            let item: syn::ItemFn = input.parse()?;
+            item.try_into()
+        }
+    }
+
+    impl syn::parse::Parse for VerifiedImpl {
+        fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+            let item: syn::ItemImpl = input.parse()?;
+            item.try_into()
+        }
+    }
 
     macro_rules! parse_test {
         (
