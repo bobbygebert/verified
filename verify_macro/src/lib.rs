@@ -22,13 +22,10 @@ pub fn verify(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 // TODO: Clean up the branching logic here.
 fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
-    let verified_fn: syn::Result<VerifiedFn> = syn::parse(item.clone());
-    if verified_fn.is_err() {
-        let verified_impl: VerifiedImpl = syn::parse(item)?;
-        Ok(verified_impl.item.into_token_stream().into())
-    } else {
-        Ok(verified_fn.unwrap().item.into_token_stream().into())
-    }
+    syn::parse::<VerifiedFn>(item.clone())
+        .map(|i| i.item)
+        .or_else(|_| syn::parse::<VerifiedImpl>(item).map(|i| i.item))
+        .map(|i| i.into_token_stream().into())
 }
 
 //  ____                _
@@ -44,6 +41,7 @@ impl syn::parse::Parse for VerifiedImpl {
         let mut item: syn::ItemImpl = input.parse()?;
         let mut where_clause = item.generics.make_where_clause();
         update_where_clause(&mut where_clause)?;
+        let item = syn::Item::Impl(item);
         Ok(Self { item })
     }
 }
@@ -53,6 +51,7 @@ impl syn::parse::Parse for VerifiedFn {
         let mut item: syn::ItemFn = input.parse()?;
         let mut where_clause = item.sig.generics.make_where_clause();
         update_where_clause(&mut where_clause)?;
+        let item = syn::Item::Fn(item);
         Ok(Self { item })
     }
 }
@@ -419,12 +418,12 @@ impl TryFrom<syn::Lit> for Op {
 
 #[derive(Debug)]
 struct VerifiedFn {
-    item: syn::ItemFn,
+    item: syn::Item,
 }
 
 #[derive(Debug)]
 struct VerifiedImpl {
-    item: syn::ItemImpl,
+    item: syn::Item,
 }
 
 #[derive(Debug)]
