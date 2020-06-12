@@ -307,6 +307,15 @@ impl TryFrom<ImplPredicate> for Vec<syn::PredicateType> {
                         predicate! {{ #left_ty }: { Cmp<#right_ty> }},
                         predicate! {{ #left_ty }: { IsGreaterOrEqual<#right_ty> }},
                     ],
+                    syn::BinOp::Add(_)
+                    | syn::BinOp::Div(_)
+                    | syn::BinOp::Mul(_)
+                    | syn::BinOp::Rem(_)
+                    | syn::BinOp::Shl(_)
+                    | syn::BinOp::Shr(_)
+                    | syn::BinOp::Sub(_) => vec![
+                        predicate! {{ <#left_ty as #op_name<#right_ty>>::Output }: { Unsigned }},
+                    ],
                     _ => vec![],
                 }
                 .into_iter()
@@ -904,7 +913,164 @@ mod tests {
                     A: Add<B, Output = U3>,
                     <A as Add<B>>::Output: Cmp<U3>,
                     <A as Add<B>>::Output: IsEqual<U3>,
+                    <A as Add<B>>::Output: Unsigned,
                     A: Add<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_subtraction_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    _: Verify<{ (A - B) == 3 }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    A: Sub<B, Output = U3>,
+                    <A as Sub<B>>::Output: Cmp<U3>,
+                    <A as Sub<B>>::Output: IsEqual<U3>,
+                    <A as Sub<B>>::Output: Unsigned,
+                    A: Sub<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_division_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    _: Verify<{ (A / B) == 3 }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    A: Div<B, Output = U3>,
+                    <A as Div<B>>::Output: Cmp<U3>,
+                    <A as Div<B>>::Output: IsEqual<U3>,
+                    <A as Div<B>>::Output: Unsigned,
+                    A: Div<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_multiplication_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    _: Verify<{ (A * B) == 3 }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    A: Mul<B, Output = U3>,
+                    <A as Mul<B>>::Output: Cmp<U3>,
+                    <A as Mul<B>>::Output: IsEqual<U3>,
+                    <A as Mul<B>>::Output: Unsigned,
+                    A: Mul<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_remainder_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    _: Verify<{ (A % B) == 3 }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    A: Rem<B, Output = U3>,
+                    <A as Rem<B>>::Output: Cmp<U3>,
+                    <A as Rem<B>>::Output: IsEqual<U3>,
+                    <A as Rem<B>>::Output: Unsigned,
+                    A: Rem<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_shift_left_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    _: Verify<{ (A << B) == 3 }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    A: Shl<B, Output = U3>,
+                    <A as Shl<B>>::Output: Cmp<U3>,
+                    <A as Shl<B>>::Output: IsEqual<U3>,
+                    <A as Shl<B>>::Output: Unsigned,
+                    A: Shl<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_usize_shift_right_clauses() {
+        parse_test! {
+            parse: VerifiedFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    _: Verify<{ (A >> B) == 3 }>,
+                {
+                }
+            },
+            expect: syn::ItemFn
+            {
+                fn f<A: Unsigned, B: Unsigned>()
+                where
+                    A: Shr<B, Output = U3>,
+                    <A as Shr<B>>::Output: Cmp<U3>,
+                    <A as Shr<B>>::Output: IsEqual<U3>,
+                    <A as Shr<B>>::Output: Unsigned,
+                    A: Shr<B>,
                 {
                 }
             },
@@ -1046,6 +1212,7 @@ mod tests {
             {
                 fn f<A: Unsigned>() -> Container<<A as Add<U1>>::Output>
                 where
+                    <A as Add<U1>>::Output: Unsigned,
                     A: Add<U1>,
                 {
                 }
