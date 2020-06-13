@@ -319,14 +319,14 @@ impl TryFrom<Clause> for Vec<syn::PredicateType> {
         let op: Op = clause.try_into()?;
         Ok(vec![op.clone().try_into()?]
             .into_iter()
-            .chain(TryInto::<Self>::try_into(ImplPredicate(op))?.into_iter())
+            .chain(TryInto::<Self>::try_into(op)?.into_iter())
             .collect())
     }
 }
 
-impl TryFrom<ImplPredicate> for Vec<syn::PredicateType> {
+impl TryFrom<Op> for Vec<syn::PredicateType> {
     type Error = syn::Error;
-    fn try_from(ImplPredicate(from): ImplPredicate) -> syn::Result<Self> {
+    fn try_from(from: Op) -> syn::Result<Self> {
         let op_name = from.get_op_name();
         Ok(match from {
             Op::BinOp { op, left, right } => {
@@ -364,15 +364,15 @@ impl TryFrom<ImplPredicate> for Vec<syn::PredicateType> {
                 }
                 .into_iter()
                 .chain(vec![predicate! {{ #left_ty }: { #op_name<#right_ty> }}])
-                .chain(TryInto::<Self>::try_into(ImplPredicate(*left))?.into_iter())
-                .chain(TryInto::<Self>::try_into(ImplPredicate(*right))?.into_iter())
+                .chain(TryInto::<Self>::try_into(*left)?.into_iter())
+                .chain(TryInto::<Self>::try_into(*right)?.into_iter())
                 .collect()
             }
             Op::UnOp { op, left } => {
                 let left_ty: syn::Type = (*left.clone()).try_into()?;
                 vec![predicate! {{ #left_ty }: { #op }}]
                     .into_iter()
-                    .chain(TryInto::<Self>::try_into(ImplPredicate(*left))?.into_iter())
+                    .chain(TryInto::<Self>::try_into(*left)?.into_iter())
                     .collect()
             }
             Op::Path(_) => vec![],
@@ -535,8 +535,6 @@ struct Logic {
 
 #[derive(Clone, Debug)]
 struct Clause(syn::Expr);
-
-struct ImplPredicate(Op);
 
 #[derive(Clone, Debug)]
 enum Op {
