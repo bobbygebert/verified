@@ -104,26 +104,10 @@ impl TryFrom<syn::PathArguments> for Logic {
 impl syn::parse::Parse for Logic {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let clauses =
-            syn::punctuated::Punctuated::<Clause, syn::Token!(,)>::parse_terminated(input)?
+            syn::punctuated::Punctuated::<syn::Expr, syn::Token!(,)>::parse_terminated(input)?
                 .into_iter()
                 .collect();
         Ok(Self { clauses })
-    }
-}
-
-impl syn::parse::Parse for Clause {
-    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
-        let expr: syn::Expr = input.parse()?;
-        Ok(Self(match expr {
-            syn::Expr::Block(syn::ExprBlock {
-                block: syn::Block { stmts, .. },
-                ..
-            }) if stmts.len() == 1 => {
-                let stmt = stmts.first().unwrap();
-                syn::parse_quote!(#stmt)
-            }
-            expr => expr,
-        }))
     }
 }
 
@@ -151,9 +135,8 @@ impl<'g> Translator<'g> {
                 .clauses
                 .clone()
                 .into_iter()
-                .map(|clause| {
-                    TryInto::<Op>::try_into(clause)
-                        .and_then(|op| TryInto::<syn::Type>::try_into(op))
+                .map(|expr| {
+                    TryInto::<Op>::try_into(expr).and_then(|op| TryInto::<syn::Type>::try_into(op))
                 })
                 .collect::<syn::Result<Vec<_>>>()?;
             if let syn::PathArguments::AngleBracketed(generic_args) = generics {
@@ -168,17 +151,19 @@ impl<'g> Translator<'g> {
                     .into_iter()
                     .filter(
                         // Unwrap because we would have errored earlier.
-                        |clause| match TryInto::<Op>::try_into(clause.clone()).unwrap() {
+                        |expr| match TryInto::<Op>::try_into(expr.clone()).unwrap() {
                             Op::BinOp { .. } | Op::UnOp { .. } => true,
                             Op::Path(_) => false,
                         },
                     )
-                    .map(|clause| {
-                        Ok(TryInto::<Vec<syn::PredicateType>>::try_into(clause)?
+                    .map(|expr| {
+                        Ok(
+                            TryInto::<Vec<syn::PredicateType>>::try_into(TryInto::<Op>::try_into(
+                                expr,
+                            )?)?
                             .into_iter()
-                            // Hack: Skip first bound `Lhs: op<Rhs, Ouput = B1>`.
-                            .skip(1)
-                            .map(|ty| syn::WherePredicate::Type(ty)))
+                            .map(|ty| syn::WherePredicate::Type(ty)),
+                        )
                     })
                     .collect::<syn::Result<Vec<_>>>()?
                     .into_iter()
@@ -292,9 +277,15 @@ fn replace_verify_bound(where_clause: &mut syn::WhereClause) -> syn::Result<()> 
 
     for clause in logic.clauses.into_iter() {
         predicates.extend(
-            TryInto::<Vec<_>>::try_into(clause)?
-                .into_iter()
-                .map(|p| syn::WherePredicate::Type(p)),
+            vec![syn::WherePredicate::Type(TryInto::try_into(
+                TryInto::<Op>::try_into(clause.clone())?,
+            )?)]
+            .into_iter()
+            .chain(
+                TryInto::<Vec<_>>::try_into(TryInto::<Op>::try_into(clause)?)?
+                    .into_iter()
+                    .map(|p| syn::WherePredicate::Type(p)),
+            ),
         );
     }
 
@@ -313,17 +304,7 @@ macro_rules! predicate {
     };
 }
 
-impl TryFrom<Clause> for Vec<syn::PredicateType> {
-    type Error = syn::Error;
-    fn try_from(clause: Clause) -> syn::Result<Self> {
-        let op: Op = clause.try_into()?;
-        Ok(vec![op.clone().try_into()?]
-            .into_iter()
-            .chain(TryInto::<Self>::try_into(op)?.into_iter())
-            .collect())
-    }
-}
-
+// The first predicate corresponds to the "truthyness" bound.
 impl TryFrom<Op> for Vec<syn::PredicateType> {
     type Error = syn::Error;
     fn try_from(from: Op) -> syn::Result<Self> {
@@ -469,24 +450,32 @@ impl TryFrom<Op> for syn::Type {
     }
 }
 
-impl TryFrom<Clause> for Op {
+impl TryFrom<syn::Expr> for Op {
     type Error = syn::Error;
-    fn try_from(clause: Clause) -> syn::Result<Self> {
-        match clause.0 {
+    fn try_from(expr: syn::Expr) -> syn::Result<Self> {
+        match expr {
             syn::Expr::Binary(syn::ExprBinary {
                 op, left, right, ..
             }) => Ok(Op::BinOp {
                 op,
-                left: Box::new(Clause(*left).try_into()?),
-                right: Box::new(Clause(*right).try_into()?),
+                left: Box::new((*left).try_into()?),
+                right: Box::new((*right).try_into()?),
             }),
             syn::Expr::Unary(syn::ExprUnary { op, expr, .. }) => Ok(Op::UnOp {
                 op,
-                left: Box::new(Clause(*expr).try_into()?),
+                left: Box::new((*expr).try_into()?),
             }),
             syn::Expr::Lit(syn::ExprLit { lit, .. }) => Ok(lit.try_into()?),
             syn::Expr::Path(syn::ExprPath { path, .. }) => Ok(Op::Path(path)),
-            syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok(Clause(*expr).try_into()?),
+            syn::Expr::Paren(syn::ExprParen { expr, .. }) => Ok((*expr).try_into()?),
+            syn::Expr::Block(syn::ExprBlock {
+                block: syn::Block { stmts, .. },
+                ..
+            }) if stmts.len() == 1 => {
+                let stmt = stmts.first().unwrap();
+                let expr: syn::Expr = syn::parse_quote!(#stmt);
+                expr.try_into()
+            }
             unsupported_expr => Err(syn::Error::new(
                 unsupported_expr.span(),
                 "unsupported logical expression",
@@ -529,11 +518,8 @@ impl TryFrom<syn::Lit> for Op {
 
 #[derive(Debug)]
 struct Logic {
-    clauses: Vec<Clause>,
+    clauses: Vec<syn::Expr>,
 }
-
-#[derive(Clone, Debug)]
-struct Clause(syn::Expr);
 
 #[derive(Clone, Debug)]
 enum Op {
