@@ -36,6 +36,7 @@ fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
 
 struct VerifiableItem(syn::Item);
 
+// TODO: Test this impl
 impl syn::parse::Parse for VerifiableItem {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let mut item: syn::Item = input.parse()?;
@@ -51,6 +52,7 @@ impl syn::parse::Parse for VerifiableItem {
             syn::Item::Impl(item) => {
                 let mut where_clause = item.generics.make_where_clause();
                 replace_verify_bound(&mut where_clause)?;
+                Translator::new(&mut where_clause).translate(item.self_ty.as_mut())?;
                 for item in &mut item.items {
                     match item {
                         syn::ImplItem::Method(item) => {
@@ -60,6 +62,10 @@ impl syn::parse::Parse for VerifiableItem {
                             if let syn::ReturnType::Type(_, ref mut ty) = &mut item.sig.output {
                                 Translator::new(&mut where_clause).translate(ty.as_mut())?;
                             }
+                        }
+                        syn::ImplItem::Type(item) => {
+                            // TODO: Support types in other locations
+                            Translator::new(&mut where_clause).translate(&mut item.ty)?;
                         }
                         _ => (),
                     }

@@ -114,14 +114,11 @@ impl<Size: Unsigned, Element> std::convert::TryFrom<Raw<Element>> for Vec<Size, 
     }
 }
 
+#[verify]
 impl<SizeL: Unsigned, SizeR: Unsigned, Element> std::ops::Add<Vec<SizeR, Element>>
     for Vec<SizeL, Element>
-where
-    SizeL: Add<SizeR>,
-    <SizeL as Add<SizeR>>::Output: Unsigned,
 {
-    // TODO: Implement support for logic in types outside of where clauses.
-    type Output = Vec<<SizeL as Add<SizeR>>::Output, Element>;
+    type Output = Vec<{ SizeL + SizeR }, Element>;
     fn add(self, Vec(os, mut ov): Vec<SizeR, Element>) -> Self::Output {
         let Self(s, mut v) = self;
         v.append(&mut ov);
@@ -129,12 +126,9 @@ where
     }
 }
 
-// TODO: Implement support for logic in types outside of where clauses.
 #[verify]
-impl<Size: Unsigned, NewSize: Unsigned, Element> std::convert::From<(Vec<Size, Element>, Element)>
-    for Vec<NewSize, Element>
-where
-    _: Verify<{ NewSize == Size + 1 }>,
+impl<Size: Unsigned, Element> std::convert::From<(Vec<Size, Element>, Element)>
+    for Vec<{ Size + 1 }, Element>
 {
     fn from((Vec(_, mut v), e): (Vec<Size, Element>, Element)) -> Self {
         v.push(e);
@@ -142,12 +136,11 @@ where
     }
 }
 
-// TODO: Implement support for logic in types outside of where clauses.
 #[verify]
-impl<Size: Unsigned, NewSize: Unsigned, Element> std::convert::From<Vec<Size, Element>>
-    for (Vec<NewSize, Element>, Element)
+impl<Size: Unsigned, Element> std::convert::From<Vec<Size, Element>>
+    for (Vec<{ Size - 1 }, Element>, Element)
 where
-    _: Verify<{ Size > 0 }, { NewSize == Size - 1 }>,
+    _: Verify<{ Size > 0 }>,
 {
     fn from(Vec(_, mut v): Vec<Size, Element>) -> Self {
         let e = v.pop().unwrap();
