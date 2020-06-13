@@ -304,7 +304,8 @@ macro_rules! predicate {
     };
 }
 
-// The first predicate corresponds to the "truthyness" bound.
+// This conversion does not include the "truthiness" bound, which can be obtained by converting the
+// Op into a single PredicateType.
 impl TryFrom<Op> for Vec<syn::PredicateType> {
     type Error = syn::Error;
     fn try_from(from: Op) -> syn::Result<Self> {
@@ -597,26 +598,14 @@ impl Op {
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
-    use std::convert::TryInto;
+    use std::convert::{TryFrom, TryInto};
     use syn::parse_quote;
 
     macro_rules! op {
-        ($l:tt $op:tt $r:tt) => {
-            Op::BinOp {
-                op: parse_quote! { $op },
-                left: Box::new(Op::Path(parse_quote! { $l })),
-                right: Box::new(Op::Path(parse_quote! { $r })),
-            }
-        };
-        ($op:tt $v:tt) => {
-            Op::UnOp {
-                op: parse_quote! { $op },
-                left: Box::new(Op::Path(parse_quote! { $v })),
-            }
-        };
-        ($op:tt) => {
-            Op::Path(parse_quote! { $op })
-        };
+        ($($t:tt)*) => {{
+            let expr: syn::Expr = parse_quote! { $($t)* };
+            Op::try_from(expr).unwrap()
+        }};
     }
 
     macro_rules! ty {
@@ -632,6 +621,14 @@ mod tests {
     {
         assert_eq!(l.try_into().unwrap(), r)
     }
+
+    //   ___              __    _____
+    //  / _ \ _ __        \ \  |_   _|   _ _ __   ___
+    // | | | | '_ \   _____\ \   | || | | | '_ \ / _ \
+    // | |_| | |_) | |_____/ /   | || |_| | |_) |  __/
+    //  \___/| .__/       /_/    |_| \__, | .__/ \___|
+    //       |_|                     |___/|_|
+    //  FIGLET: Op -> Type
 
     #[test]
     fn binary_op_as_type_yields_output_of_op_trait() {
@@ -661,6 +658,239 @@ mod tests {
     #[test]
     fn path_op_as_type_yields_path() {
         assert_into(op! { V }, ty! { V });
+    }
+
+    //   ___              __    ____               _ _           _
+    //  / _ \ _ __        \ \  |  _ \ _ __ ___  __| (_) ___ __ _| |_ ___
+    // | | | | '_ \   _____\ \ | |_) | '__/ _ \/ _` | |/ __/ _` | __/ _ \
+    // | |_| | |_) | |_____/ / |  __/| | |  __/ (_| | | (_| (_| | ||  __/
+    //  \___/| .__/       /_/  |_|   |_|  \___|\__,_|_|\___\__,_|\__\___|
+    //       |_|
+    //  FIGLET: Op -> Predicate
+
+    #[test]
+    fn path_as_predicate_yeilds_is_equal_to_true_bound() {
+        assert_into(op! { V }, predicate! {{ V }: { IsEqual<B1, Output = B1> }});
+    }
+
+    #[test]
+    fn binary_ops_with_boolean_output_yield_op_on_right_with_true_output_bound() {
+        // NB: == is special, and is tested separately
+        assert_into(
+            op! { A & B },
+            predicate! {{ A }: { BitAnd<B, Output = B1> }},
+        );
+        assert_into(op! { A | B }, predicate! {{ A }: { BitOr<B, Output = B1> }});
+        assert_into(
+            op! { A ^ B },
+            predicate! {{ A }: { BitXor<B, Output = B1> }},
+        );
+        assert_into(
+            op! { A >= B },
+            predicate! {{ A }: { IsGreaterOrEqual<B, Output = B1> }},
+        );
+        assert_into(
+            op! { A > B },
+            predicate! {{ A }: { IsGreater<B, Output = B1> }},
+        );
+        assert_into(
+            op! { A <= B },
+            predicate! {{ A }: { IsLessOrEqual<B, Output = B1> }},
+        );
+        assert_into(
+            op! { A < B },
+            predicate! {{ A }: { IsLess<B, Output = B1> }},
+        );
+        assert_into(
+            op! { A != B },
+            predicate! {{ A }: { IsNotEqual<B, Output = B1> }},
+        );
+    }
+
+    #[test]
+    fn binary_eq_op_with_path_or_unary_on_both_sides_yields_equality_bound_with_output_of_true() {
+        assert_into(
+            op! { A == B },
+            predicate! {{ A }: { IsEqual<B, Output = B1> }},
+        );
+        assert_into(
+            op! { A == !B },
+            predicate! {{ A }: { IsEqual<<B as Not>::Output, Output = B1> }},
+        );
+        assert_into(
+            op! { !A == B },
+            predicate! {{ <A as Not>::Output }: { IsEqual<B, Output = B1> }},
+        );
+        assert_into(
+            op! { !A == !B },
+            predicate! {{ <A as Not>::Output }: { IsEqual<<B as Not>::Output, Output = B1> }},
+        );
+    }
+
+    #[test]
+    fn binary_eq_op_with_binary_op_on_left_yields_bound_of_left_op_with_output_of_right_op() {
+        assert_into(
+            op! { A + B == C },
+            predicate! {{ A }: { Add<B, Output = C> }},
+        );
+    }
+
+    #[test]
+    fn binary_eq_op_with_binary_op_on_right_yields_bound_of_right_op_with_output_of_left_op() {
+        assert_into(
+            op! { C == A + B },
+            predicate! {{ A }: { Add<B, Output = C> }},
+        );
+    }
+
+    //   ___              __
+    //  / _ \ _ __        \ \
+    // | | | | '_ \   _____\ \
+    // | |_| | |_) | |_____/ /
+    //  \___/| .__/       /_/
+    //       |_|
+    // __     __         ______               _ _           _      __
+    // \ \   / /__  ___ / /  _ \ _ __ ___  __| (_) ___ __ _| |_ ___\ \
+    //  \ \ / / _ \/ __/ /| |_) | '__/ _ \/ _` | |/ __/ _` | __/ _ \\ \
+    //   \ V /  __/ (__\ \|  __/| | |  __/ (_| | | (_| (_| | ||  __// /
+    //    \_/ \___|\___|\_\_|   |_|  \___|\__,_|_|\___\__,_|\__\___/_/
+    //  FIGLET: Op -> Vec<Predicate>
+
+    #[test]
+    fn path_op_yields_empty() {
+        assert_into(op! { V }, vec![]);
+    }
+
+    #[test]
+    fn unary_op_yields_unary_op_bound_and_bounds_for_operand() {
+        assert_into(op! { !V }, vec![predicate! {{ V }: { Not }}]);
+        assert_into(
+            op! { !(A | (B & C)) },
+            vec![
+                predicate! {{ <A as BitOr<<B as BitAnd<C>>::Output>>::Output }: { Not }},
+                predicate! {{ A }: { BitOr<<B as BitAnd<C>>::Output> }},
+                predicate! {{ B }: { BitAnd<C> }},
+            ],
+        );
+    }
+
+    #[test]
+    fn binary_eq_ne_le_and_ge_add_extra_cmp_bound() {
+        assert_into(
+            op! { A == B },
+            vec![
+                predicate! {{ A }: { Cmp<B> }},
+                predicate! {{ A }: { IsEqual<B> }},
+            ],
+        );
+        assert_into(
+            op! { A != B },
+            vec![
+                predicate! {{ A }: { Cmp<B> }},
+                predicate! {{ A }: { IsNotEqual<B> }},
+            ],
+        );
+        assert_into(
+            op! { A <= B },
+            vec![
+                predicate! {{ A }: { Cmp<B> }},
+                predicate! {{ A }: { IsLessOrEqual<B> }},
+            ],
+        );
+        assert_into(
+            op! { A >= B },
+            vec![
+                predicate! {{ A }: { Cmp<B> }},
+                predicate! {{ A }: { IsGreaterOrEqual<B> }},
+            ],
+        );
+    }
+
+    #[test]
+    fn binary_lt_and_gt_add_extra_cmp_and_le_or_ge_bound() {
+        assert_into(
+            op! { A < B },
+            vec![
+                predicate! {{ A }: { Cmp<B> }},
+                predicate! {{ A }: { IsLessOrEqual<B> }},
+                predicate! {{ A }: { IsLess<B> }},
+            ],
+        );
+        assert_into(
+            op! { A > B },
+            vec![
+                predicate! {{ A }: { Cmp<B> }},
+                predicate! {{ A }: { IsGreaterOrEqual<B> }},
+                predicate! {{ A }: { IsGreater<B> }},
+            ],
+        );
+    }
+
+    #[test]
+    fn binary_add_div_mul_rem_shl_shr_sub_add_extra_unsigned_cmp_and_eq_bounds() {
+        assert_into(
+            op! { A + B },
+            vec![
+                predicate! {{ <A as Add<B>>::Output  }: { Unsigned }},
+                predicate! {{ <A as Add<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Add<B>>::Output }: { IsEqual<<A as Add<B>>::Output> }},
+                predicate! {{ A }: { Add<B> }},
+            ],
+        );
+        assert_into(
+            op! { A / B },
+            vec![
+                predicate! {{ <A as Div<B>>::Output  }: { Unsigned }},
+                predicate! {{ <A as Div<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Div<B>>::Output }: { IsEqual<<A as Div<B>>::Output> }},
+                predicate! {{ A }: { Div<B> }},
+            ],
+        );
+        assert_into(
+            op! { A * B },
+            vec![
+                predicate! {{ <A as Mul<B>>::Output  }: { Unsigned }},
+                predicate! {{ <A as Mul<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Mul<B>>::Output }: { IsEqual<<A as Mul<B>>::Output> }},
+                predicate! {{ A }: { Mul<B> }},
+            ],
+        );
+        assert_into(
+            op! { A % B },
+            vec![
+                predicate! {{ <A as Rem<B>>::Output  }: { Unsigned }},
+                predicate! {{ <A as Rem<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Rem<B>>::Output }: { IsEqual<<A as Rem<B>>::Output> }},
+                predicate! {{ A }: { Rem<B> }},
+            ],
+        );
+        assert_into(
+            op! { A << B },
+            vec![
+                predicate! {{ <A as Shl<B>>::Output  }: { Unsigned }},
+                predicate! {{ <A as Shl<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Shl<B>>::Output }: { IsEqual<<A as Shl<B>>::Output> }},
+                predicate! {{ A }: { Shl<B> }},
+            ],
+        );
+        assert_into(
+            op! { A >> B },
+            vec![
+                predicate! {{ <A as Shr<B>>::Output  }: { Unsigned }},
+                predicate! {{ <A as Shr<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Shr<B>>::Output }: { IsEqual<<A as Shr<B>>::Output> }},
+                predicate! {{ A }: { Shr<B> }},
+            ],
+        );
+        assert_into(
+            op! { A - B },
+            vec![
+                predicate! {{ <A as Sub<B>>::Output  }: { Unsigned }},
+                predicate! {{ <A as Sub<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Sub<B>>::Output }: { IsEqual<<A as Sub<B>>::Output> }},
+                predicate! {{ A }: { Sub<B> }},
+            ],
+        );
     }
 
     //  ____
@@ -694,26 +924,6 @@ mod tests {
     }
 
     #[test]
-    fn Bit_identity_clause_is_converted_bound_of_IsEqual_B1() {
-        parse_test! {
-            parse {
-                fn f<B: Bit>()
-                where
-                    _: Verify<{ B }>,
-                {
-                }
-            },
-            expect {
-                fn f<B: Bit>()
-                where
-                    B: IsEqual<B1, Output = B1>
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
     fn Multiple_Bit_identity_clauses_are_converted_to_multiple_bounds() {
         parse_test! {
             parse {
@@ -735,7 +945,7 @@ mod tests {
     }
 
     #[test]
-    fn Bit_equality_clause_is_converted_to_IsEqual_bound() {
+    fn Bit_equality_clause_is_converted_to_IsEqual_bound_with_added_output_of_true() {
         parse_test! {
             parse {
                 fn f<A: Bit, B: Bit>()
@@ -757,90 +967,6 @@ mod tests {
     }
 
     #[test]
-    fn Bit_and_clause_is_converted_to_And_bound_on_BinOp() {
-        parse_test! {
-            parse {
-                fn f<A: Bit, B: Bit>()
-                where
-                    _: Verify<{ A & B }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Bit, B: Bit>()
-                where
-                    A: BitAnd<B, Output = B1>,
-                    A: BitAnd<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn Bit_or_clause_is_converted_to_Or_bound_on_BinOp() {
-        parse_test! {
-            parse {
-                fn f<A: Bit, B: Bit>()
-                where
-                    _: Verify<{ A | B }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Bit, B: Bit>()
-                where
-                    A: BitOr<B, Output = B1>,
-                    A: BitOr<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn Bit_xor_clause_is_converted_to_Xor_bound_on_BinOp() {
-        parse_test! {
-            parse {
-                fn f<A: Bit, B: Bit>()
-                where
-                    _: Verify<{ A ^ B }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Bit, B: Bit>()
-                where
-                    A: BitXor<B, Output = B1>,
-                    A: BitXor<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn Bit_not_clause_is_converted_to_IsEqual_bound_on_BitXor_Output() {
-        parse_test! {
-            parse {
-                fn f<B: Bit>()
-                where
-                    _: Verify<{ !B }>,
-                {
-                }
-            },
-            expect {
-                fn f<B: Bit>()
-                where
-                    B: Not<Output = B1>,
-                    B: Not,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
     fn parenthesized_Bit_clauses_are_unwrapped() {
         parse_test! {
             parse {
@@ -855,52 +981,6 @@ mod tests {
                 where
                     B: Not<Output = B1>,
                     B: Not,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn unary_op_can_be_applied_to_nested_clause() {
-        parse_test! {
-            parse {
-                fn f<A: Bit, B: Bit>()
-                where
-                    _: Verify<{ !(A & B) }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Bit, B: Bit>()
-                where
-                    <A as BitAnd<B>>::Output: Not<Output = B1>,
-                    <A as BitAnd<B>>::Output: Not,
-                    A: BitAnd<B>
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn binary_op_can_be_applied_to_nested_clause() {
-        parse_test! {
-            parse {
-                fn f<A: Bit, B: Bit, C: Bit>()
-                where
-                    _: Verify<{ (A & (B | C)) == C }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Bit, B: Bit, C: Bit>()
-                where
-                    A: BitAnd<<B as BitOr<C>>::Output, Output = C>,
-                    <A as BitAnd<<B as BitOr<C>>::Output>>::Output: Cmp<C>,
-                    <A as BitAnd<<B as BitOr<C>>::Output>>::Output: IsEqual<C>,
-                    A: BitAnd<<B as BitOr<C>>::Output>,
-                    B: BitOr<C>,
                 {
                 }
             },
@@ -959,300 +1039,6 @@ mod tests {
     }
 
     #[test]
-    fn can_verify_usize_addition_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ (A + B) == 3 }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: Add<B, Output = U3>,
-                    <A as Add<B>>::Output: Cmp<U3>,
-                    <A as Add<B>>::Output: IsEqual<U3>,
-                    <A as Add<B>>::Output: Unsigned,
-                    <A as Add<B>>::Output: Cmp,
-                    <A as Add<B>>::Output: IsEqual<<A as Add<B>>::Output>,
-                    A: Add<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_subtraction_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ (A - B) == 3 }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: Sub<B, Output = U3>,
-                    <A as Sub<B>>::Output: Cmp<U3>,
-                    <A as Sub<B>>::Output: IsEqual<U3>,
-                    <A as Sub<B>>::Output: Unsigned,
-                    <A as Sub<B>>::Output: Cmp,
-                    <A as Sub<B>>::Output: IsEqual<<A as Sub<B>>::Output>,
-                    A: Sub<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_division_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ (A / B) == 3 }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: Div<B, Output = U3>,
-                    <A as Div<B>>::Output: Cmp<U3>,
-                    <A as Div<B>>::Output: IsEqual<U3>,
-                    <A as Div<B>>::Output: Unsigned,
-                    <A as Div<B>>::Output: Cmp,
-                    <A as Div<B>>::Output: IsEqual<<A as Div<B>>::Output>,
-                    A: Div<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_multiplication_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ (A * B) == 3 }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: Mul<B, Output = U3>,
-                    <A as Mul<B>>::Output: Cmp<U3>,
-                    <A as Mul<B>>::Output: IsEqual<U3>,
-                    <A as Mul<B>>::Output: Unsigned,
-                    <A as Mul<B>>::Output: Cmp,
-                    <A as Mul<B>>::Output: IsEqual<<A as Mul<B>>::Output>,
-                    A: Mul<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_remainder_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ (A % B) == 3 }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: Rem<B, Output = U3>,
-                    <A as Rem<B>>::Output: Cmp<U3>,
-                    <A as Rem<B>>::Output: IsEqual<U3>,
-                    <A as Rem<B>>::Output: Unsigned,
-                    <A as Rem<B>>::Output: Cmp,
-                    <A as Rem<B>>::Output: IsEqual<<A as Rem<B>>::Output>,
-                    A: Rem<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_shift_left_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ (A << B) == 3 }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: Shl<B, Output = U3>,
-                    <A as Shl<B>>::Output: Cmp<U3>,
-                    <A as Shl<B>>::Output: IsEqual<U3>,
-                    <A as Shl<B>>::Output: Unsigned,
-                    <A as Shl<B>>::Output: Cmp,
-                    <A as Shl<B>>::Output: IsEqual<<A as Shl<B>>::Output>,
-                    A: Shl<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_shift_right_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ (A >> B) == 3 }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: Shr<B, Output = U3>,
-                    <A as Shr<B>>::Output: Cmp<U3>,
-                    <A as Shr<B>>::Output: IsEqual<U3>,
-                    <A as Shr<B>>::Output: Unsigned,
-                    <A as Shr<B>>::Output: Cmp,
-                    <A as Shr<B>>::Output: IsEqual<<A as Shr<B>>::Output>,
-                    A: Shr<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_less_than_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ A < B }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: IsLess<B, Output = B1>,
-                    A: Cmp<B>,
-                    A: IsLessOrEqual<B>,
-                    A: IsLess<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_greater_than_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ A > B }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: IsGreater<B, Output = B1>,
-                    A: Cmp<B>,
-                    A: IsGreaterOrEqual<B>,
-                    A: IsGreater<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_less_equal_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ A <= B }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: IsLessOrEqual<B, Output = B1>,
-                    A: Cmp<B>,
-                    A: IsLessOrEqual<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_greater_equal_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ A >= B }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: IsGreaterOrEqual<B, Output = B1>,
-                    A: Cmp<B>,
-                    A: IsGreaterOrEqual<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
-    fn can_verify_usize_not_equal_clauses() {
-        parse_test! {
-            parse {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    _: Verify<{ A != B }>,
-                {
-                }
-            },
-            expect {
-                fn f<A: Unsigned, B: Unsigned>()
-                where
-                    A: IsNotEqual<B, Output = B1>,
-                    A: Cmp<B>,
-                    A: IsNotEqual<B>,
-                {
-                }
-            },
-        }
-    }
-
-    #[test]
     fn can_verify_type_construction_in_fn_return_value() {
         parse_test! {
             parse {
@@ -1268,6 +1054,55 @@ mod tests {
                     <A as Add<U1>>::Output: IsEqual<<A as Add<U1>>::Output>,
                     A: Add<U1>,
                 {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_impl_bounds() {
+        parse_test! {
+            parse {
+                impl<A: Unsigned, B: Unsigned> Trait for Struct<A, B>
+                where
+                    _: Verify<{ A + B == 3 }>,
+                {
+                }
+            },
+            expect {
+                impl<A: Unsigned, B: Unsigned> Trait for Struct<A, B>
+                where
+                    A: Add<B, Output = U3>,
+                    <A as Add<B>>::Output: Cmp<U3>,
+                    <A as Add<B>>::Output: IsEqual<U3>,
+                    <A as Add<B>>::Output: Unsigned,
+                    <A as Add<B>>::Output: Cmp,
+                    <A as Add<B>>::Output: IsEqual<<A as Add<B>>::Output>,
+                    A: Add<B>,
+                {
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_type_construction_in_associate_type() {
+        parse_test! {
+            parse {
+                impl<A: Unsigned, B: Unsigned> Trait for Struct<A, B>
+                {
+                    type Type = Output<{A + B}>;
+                }
+            },
+            expect {
+                impl<A: Unsigned, B: Unsigned> Trait for Struct<A, B>
+                where
+                    <A as Add<B>>::Output: Unsigned,
+                    <A as Add<B>>::Output: Cmp,
+                    <A as Add<B>>::Output: IsEqual<<A as Add<B>>::Output>,
+                    A: Add<B>,
+                {
+                    type Type = Output<<A as Add<B>>::Output>;
                 }
             },
         }
