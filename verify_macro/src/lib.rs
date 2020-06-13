@@ -555,27 +555,36 @@ enum Op {
 impl Op {
     fn get_op_name(&self) -> syn::Result<syn::Path> {
         if let Op::BinOp { op, .. } = self {
-            match op {
-                syn::BinOp::Add(_) => Ok(syn::parse_quote!(Add)),
-                syn::BinOp::BitAnd(_) => Ok(syn::parse_quote!(BitAnd)),
-                syn::BinOp::BitOr(_) => Ok(syn::parse_quote!(BitOr)),
-                syn::BinOp::BitXor(_) => Ok(syn::parse_quote!(BitXor)),
-                syn::BinOp::Div(_) => Ok(syn::parse_quote!(Div)),
-                syn::BinOp::Eq(_) => Ok(syn::parse_quote!(IsEqual)),
-                syn::BinOp::Ge(_) => Ok(syn::parse_quote!(IsGreaterOrEqual)),
-                syn::BinOp::Gt(_) => Ok(syn::parse_quote!(IsGreater)),
-                syn::BinOp::Le(_) => Ok(syn::parse_quote!(IsLessOrEqual)),
-                syn::BinOp::Lt(_) => Ok(syn::parse_quote!(IsLess)),
-                syn::BinOp::Mul(_) => Ok(syn::parse_quote!(Mul)),
-                syn::BinOp::Rem(_) => Ok(syn::parse_quote!(Rem)),
-                syn::BinOp::Ne(_) => Ok(syn::parse_quote!(IsNotEqual)),
-                syn::BinOp::Shl(_) => Ok(syn::parse_quote!(Shl)),
-                syn::BinOp::Shr(_) => Ok(syn::parse_quote!(Shr)),
-                syn::BinOp::Sub(_) => Ok(syn::parse_quote!(Sub)),
-                unsupported_expr => Err(syn::Error::new(
-                    unsupported_expr.span(),
-                    "unsupported logical expression",
-                )),
+            macro_rules! op_names {
+                ($op:ident { $($from:ident => $to:tt,)* }) => {
+                    match $op {
+                        $(syn::BinOp::$from(_) => Ok(syn::parse_quote!($to)),)*
+                        unsupported_expr => Err(syn::Error::new(
+                            unsupported_expr.span(),
+                            "unsupported logical expression",
+                        )),
+                    }
+                }
+            }
+            op_names! {
+                op {
+                    Add => Add,
+                    BitAnd => BitAnd,
+                    BitOr => BitOr,
+                    BitXor => BitXor,
+                    Div => Div,
+                    Eq => IsEqual,
+                    Ge => IsGreaterOrEqual,
+                    Gt => IsGreater,
+                    Le => IsLessOrEqual,
+                    Lt => IsLess,
+                    Mul => Mul,
+                    Rem => Rem,
+                    Ne => IsNotEqual,
+                    Shl => Shl,
+                    Shr => Shr,
+                    Sub => Sub,
+                }
             }
         } else {
             Err(syn::Error::new(
