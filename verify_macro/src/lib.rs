@@ -368,9 +368,10 @@ impl TryFrom<Op> for Vec<syn::PredicateType> {
                 .chain(TryInto::<Self>::try_into(*right)?.into_iter())
                 .collect()
             }
-            Op::UnOp { op, left } => {
+            Op::UnOp { left, .. } => {
+                let op_name = op_name?;
                 let left_ty: syn::Type = (*left.clone()).try_into()?;
-                vec![predicate! {{ #left_ty }: { #op }}]
+                vec![predicate! {{ #left_ty }: { #op_name }}]
                     .into_iter()
                     .chain(TryInto::<Self>::try_into(*left)?.into_iter())
                     .collect()
@@ -437,9 +438,10 @@ impl TryFrom<Op> for syn::PredicateType {
                 let right: syn::Type = (*right).try_into()?;
                 Ok(predicate! {{ #left }: { #op<#right, Output = B1> }})
             }
-            Op::UnOp { op, left } => {
+            Op::UnOp { left, .. } => {
+                let op_name = op_name?;
                 let left: syn::Type = (*left).try_into()?;
-                Ok(predicate! {{ #left }: { #op<Output = B1> }})
+                Ok(predicate! {{ #left }: { #op_name<Output = B1> }})
             }
             Op::Path(path) => Ok(predicate! {{ #path }: { IsEqual<B1, Output = B1> }}),
         }
@@ -457,9 +459,10 @@ impl TryFrom<Op> for syn::Type {
                 let right: syn::Type = (*right).try_into()?;
                 Ok(syn::parse_quote! { <#left as #op<#right>>::Output })
             }
-            Op::UnOp { op, left } => {
+            Op::UnOp { left, .. } => {
+                let op_name = op_name?;
                 let left: syn::Type = (*left).try_into()?;
-                Ok(syn::parse_quote! { <#left as #op>::Output })
+                Ok(syn::parse_quote! { <#left as #op_name>::Output })
             }
             Op::Path(path) => Ok(syn::parse_quote!(#path)),
         }
@@ -477,12 +480,8 @@ impl TryFrom<Clause> for Op {
                 left: Box::new(Clause(*left).try_into()?),
                 right: Box::new(Clause(*right).try_into()?),
             }),
-            syn::Expr::Unary(syn::ExprUnary {
-                op: syn::UnOp::Not(_),
-                expr,
-                ..
-            }) => Ok(Op::UnOp {
-                op: syn::parse_quote!(Not),
+            syn::Expr::Unary(syn::ExprUnary { op, expr, .. }) => Ok(Op::UnOp {
+                op,
                 left: Box::new(Clause(*expr).try_into()?),
             }),
             syn::Expr::Lit(syn::ExprLit { lit, .. }) => Ok(lit.try_into()?),
@@ -544,7 +543,7 @@ enum Op {
         right: Box<Self>,
     },
     UnOp {
-        op: syn::Path,
+        op: syn::UnOp,
         left: Box<Self>,
     },
     Path(syn::Path),
@@ -552,8 +551,9 @@ enum Op {
 
 impl Op {
     fn get_op_name(&self) -> syn::Result<syn::Path> {
-        if let Op::BinOp { op, .. } = self {
-            macro_rules! op_names {
+        match self {
+            Op::BinOp { op, .. } => {
+                macro_rules! op_names {
                 ($op:ident { $($from:ident => $to:tt,)* }) => {
                     match $op {
                         $(syn::BinOp::$from(_) => Ok(syn::parse_quote!($to)),)*
@@ -564,31 +564,38 @@ impl Op {
                     }
                 }
             }
-            op_names! {
-                op {
-                    Add => Add,
-                    BitAnd => BitAnd,
-                    BitOr => BitOr,
-                    BitXor => BitXor,
-                    Div => Div,
-                    Eq => IsEqual,
-                    Ge => IsGreaterOrEqual,
-                    Gt => IsGreater,
-                    Le => IsLessOrEqual,
-                    Lt => IsLess,
-                    Mul => Mul,
-                    Rem => Rem,
-                    Ne => IsNotEqual,
-                    Shl => Shl,
-                    Shr => Shr,
-                    Sub => Sub,
+                op_names! {
+                    op {
+                        Add => Add,
+                        BitAnd => BitAnd,
+                        BitOr => BitOr,
+                        BitXor => BitXor,
+                        Div => Div,
+                        Eq => IsEqual,
+                        Ge => IsGreaterOrEqual,
+                        Gt => IsGreater,
+                        Le => IsLessOrEqual,
+                        Lt => IsLess,
+                        Mul => Mul,
+                        Rem => Rem,
+                        Ne => IsNotEqual,
+                        Shl => Shl,
+                        Shr => Shr,
+                        Sub => Sub,
+                    }
                 }
             }
-        } else {
-            Err(syn::Error::new(
+            Op::UnOp { op, .. } => match op {
+                syn::UnOp::Not(_) => Ok(syn::parse_quote!(Not)),
+                unsupported_expr => Err(syn::Error::new(
+                    unsupported_expr.span(),
+                    "unsupported logical expression",
+                )),
+            },
+            _ => Err(syn::Error::new(
                 proc_macro2::Span::call_site(),
                 "unimplemented",
-            ))
+            )),
         }
     }
 }
@@ -604,6 +611,78 @@ impl Op {
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
+    use std::convert::TryInto;
+    use syn::parse_quote;
+
+    macro_rules! op {
+        ($l:tt $op:tt $r:tt) => {
+            Op::BinOp {
+                op: parse_quote! { $op },
+                left: Box::new(Op::Path(parse_quote! { $l })),
+                right: Box::new(Op::Path(parse_quote! { $r })),
+            }
+        };
+        ($op:tt $v:tt) => {
+            Op::UnOp {
+                op: parse_quote! { $op },
+                left: Box::new(Op::Path(parse_quote! { $v })),
+            }
+        };
+        ($op:tt) => {
+            Op::Path(parse_quote! { $op })
+        };
+    }
+
+    macro_rules! ty {
+        ($($t:tt)*) => {{
+            let ty: syn::Type = parse_quote! { $($t)* };
+            ty
+        }};
+    }
+
+    fn assert_into<L: TryInto<R>, R: std::fmt::Debug + Eq>(l: L, r: R)
+    where
+        <L as TryInto<R>>::Error: std::fmt::Debug,
+    {
+        assert_eq!(l.try_into().unwrap(), r)
+    }
+
+    #[test]
+    fn binary_op_as_type_yields_output_of_op_trait() {
+        assert_into(op! { L + R }, ty! { <L as Add<R>>::Output });
+        assert_into(op! { L & R }, ty! { <L as BitAnd<R>>::Output });
+        assert_into(op! { L | R }, ty! { <L as BitOr<R>>::Output });
+        assert_into(op! { L ^ R }, ty! { <L as BitXor<R>>::Output });
+        assert_into(op! { L / R }, ty! { <L as Div<R>>::Output });
+        assert_into(op! { L == R }, ty! { <L as IsEqual<R>>::Output });
+        assert_into(op! { L >= R }, ty! { <L as IsGreaterOrEqual<R>>::Output });
+        assert_into(op! { L > R }, ty! { <L as IsGreater<R>>::Output });
+        assert_into(op! { L <= R }, ty! { <L as IsLessOrEqual<R>>::Output });
+        assert_into(op! { L < R }, ty! { <L as IsLess<R>>::Output });
+        assert_into(op! { L * R }, ty! { <L as Mul<R>>::Output });
+        assert_into(op! { L % R }, ty! { <L as Rem<R>>::Output });
+        assert_into(op! { L != R }, ty! { <L as IsNotEqual<R>>::Output });
+        assert_into(op! { L << R }, ty! { <L as Shl<R>>::Output });
+        assert_into(op! { L >> R }, ty! { <L as Shr<R>>::Output });
+        assert_into(op! { L - R }, ty! { <L as Sub<R>>::Output });
+    }
+
+    #[test]
+    fn unary_op_as_type_yields_output_of_op_trait() {
+        assert_into(op! { !V }, ty! { <V as Not>::Output });
+    }
+
+    #[test]
+    fn path_op_as_type_yields_path() {
+        assert_into(op! { V }, ty! { V });
+    }
+
+    //  ____
+    // |  _ \ __ _ _ __ ___  ___
+    // | |_) / _` | '__/ __|/ _ \
+    // |  __/ (_| | |  \__ \  __/
+    // |_|   \__,_|_|  |___/\___|
+    //  FIGLET: Parse
 
     macro_rules! parse_test {
         (
@@ -614,11 +693,11 @@ mod tests {
                 $out:item
             },
         ) => {
-            let code_in: VerifiableItem = syn::parse_quote! {
+            let code_in: VerifiableItem = parse_quote! {
                 $in
             };
             let code_out = code_in.to_token_stream();
-            let expected: syn::Item = syn::parse_quote! {
+            let expected: syn::Item = parse_quote! {
                 $out
             };
             assert_eq!(
