@@ -37,20 +37,12 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
     pub fn pop(self) -> (Vec<{ Size - 1 }, Element>, Element)
     where
         _: Verify<{ Size > 0 }>,
-        // TODO: Automatically generate bound
-        <Size as Sub<U1>>::Output: Cmp,
-        <Size as Sub<U1>>::Output: IsEqual<<Size as Sub<U1>>::Output>,
     {
         self.into()
     }
 
     #[verify]
-    pub fn push(self, e: Element) -> Vec<{ Size + 1 }, Element>
-    where
-        // TODO: Automatically generate bound
-        <Size as Add<U1>>::Output: Cmp,
-        <Size as Add<U1>>::Output: IsEqual<<Size as Add<U1>>::Output>,
-    {
+    pub fn push(self, e: Element) -> Vec<{ Size + 1 }, Element> {
         (self, e).into()
     }
 
@@ -65,16 +57,12 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
     pub fn remove<Index: Unsigned>(self, _: Index) -> (Vec<{ Size - 1 }, Element>, Element)
     where
         _: Verify<{ Size > 0 }>,
-        // TODO: Automatically generate bound
-        <Size as Sub<U1>>::Output: Cmp,
-        <Size as Sub<U1>>::Output: IsEqual<<Size as Sub<U1>>::Output>,
     {
         let Self(_, mut v) = self;
         let e = v.remove(Index::to_usize());
         (Vec(Default::default(), v), e)
     }
 
-    // TODO: Implement support for logic in types outside of where clauses.
     #[verify]
     pub fn truncate<NewSize: Unsigned>(self, _: NewSize) -> Vec<NewSize, Element>
     where

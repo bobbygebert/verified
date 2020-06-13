@@ -343,6 +343,11 @@ impl TryFrom<ImplPredicate> for Vec<syn::PredicateType> {
                     | syn::BinOp::Shr(_)
                     | syn::BinOp::Sub(_) => vec![
                         predicate! {{ <#left_ty as #op_name<#right_ty>>::Output }: { Unsigned }},
+                        predicate! {{ <#left_ty as #op_name<#right_ty>>::Output }: { Cmp }},
+                        predicate! {{
+                            <#left_ty as #op_name<#right_ty>>::Output }:
+                                { IsEqual<<#left_ty as #op_name<#right_ty>>::Output>
+                        }},
                     ],
                     _ => vec![],
                 }
@@ -939,6 +944,8 @@ mod tests {
                     <A as Add<B>>::Output: Cmp<U3>,
                     <A as Add<B>>::Output: IsEqual<U3>,
                     <A as Add<B>>::Output: Unsigned,
+                    <A as Add<B>>::Output: Cmp,
+                    <A as Add<B>>::Output: IsEqual<<A as Add<B>>::Output>,
                     A: Add<B>,
                 {
                 }
@@ -965,6 +972,8 @@ mod tests {
                     <A as Sub<B>>::Output: Cmp<U3>,
                     <A as Sub<B>>::Output: IsEqual<U3>,
                     <A as Sub<B>>::Output: Unsigned,
+                    <A as Sub<B>>::Output: Cmp,
+                    <A as Sub<B>>::Output: IsEqual<<A as Sub<B>>::Output>,
                     A: Sub<B>,
                 {
                 }
@@ -991,6 +1000,8 @@ mod tests {
                     <A as Div<B>>::Output: Cmp<U3>,
                     <A as Div<B>>::Output: IsEqual<U3>,
                     <A as Div<B>>::Output: Unsigned,
+                    <A as Div<B>>::Output: Cmp,
+                    <A as Div<B>>::Output: IsEqual<<A as Div<B>>::Output>,
                     A: Div<B>,
                 {
                 }
@@ -1017,6 +1028,8 @@ mod tests {
                     <A as Mul<B>>::Output: Cmp<U3>,
                     <A as Mul<B>>::Output: IsEqual<U3>,
                     <A as Mul<B>>::Output: Unsigned,
+                    <A as Mul<B>>::Output: Cmp,
+                    <A as Mul<B>>::Output: IsEqual<<A as Mul<B>>::Output>,
                     A: Mul<B>,
                 {
                 }
@@ -1043,6 +1056,8 @@ mod tests {
                     <A as Rem<B>>::Output: Cmp<U3>,
                     <A as Rem<B>>::Output: IsEqual<U3>,
                     <A as Rem<B>>::Output: Unsigned,
+                    <A as Rem<B>>::Output: Cmp,
+                    <A as Rem<B>>::Output: IsEqual<<A as Rem<B>>::Output>,
                     A: Rem<B>,
                 {
                 }
@@ -1069,6 +1084,8 @@ mod tests {
                     <A as Shl<B>>::Output: Cmp<U3>,
                     <A as Shl<B>>::Output: IsEqual<U3>,
                     <A as Shl<B>>::Output: Unsigned,
+                    <A as Shl<B>>::Output: Cmp,
+                    <A as Shl<B>>::Output: IsEqual<<A as Shl<B>>::Output>,
                     A: Shl<B>,
                 {
                 }
@@ -1095,6 +1112,8 @@ mod tests {
                     <A as Shr<B>>::Output: Cmp<U3>,
                     <A as Shr<B>>::Output: IsEqual<U3>,
                     <A as Shr<B>>::Output: Unsigned,
+                    <A as Shr<B>>::Output: Cmp,
+                    <A as Shr<B>>::Output: IsEqual<<A as Shr<B>>::Output>,
                     A: Shr<B>,
                 {
                 }
@@ -1238,6 +1257,8 @@ mod tests {
                 fn f<A: Unsigned>() -> Container<<A as Add<U1>>::Output>
                 where
                     <A as Add<U1>>::Output: Unsigned,
+                    <A as Add<U1>>::Output: Cmp,
+                    <A as Add<U1>>::Output: IsEqual<<A as Add<U1>>::Output>,
                     A: Add<U1>,
                 {
                 }
