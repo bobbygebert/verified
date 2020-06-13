@@ -24,8 +24,8 @@ impl<Element> Vec<U0, Element> {
     }
 }
 
+#[verify]
 impl<Size: Unsigned, Element> Vec<Size, Element> {
-    #[verify]
     pub fn append<OtherSize: Unsigned>(
         self,
         other: Vec<OtherSize, Element>,
@@ -33,7 +33,6 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
         self + other
     }
 
-    #[verify]
     pub fn pop(self) -> (Vec<{ Size - 1 }, Element>, Element)
     where
         _: Verify<{ Size > 0 }>,
@@ -41,19 +40,16 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
         self.into()
     }
 
-    #[verify]
     pub fn push(self, e: Element) -> Vec<{ Size + 1 }, Element> {
         (self, e).into()
     }
 
-    #[verify]
     pub fn insert<Index: Unsigned>(self, _: Index, e: Element) -> Vec<{ Size + 1 }, Element> {
         let Self(_, mut v) = self;
         v.insert(Index::to_usize(), e);
         Vec(Default::default(), v)
     }
 
-    #[verify]
     pub fn remove<Index: Unsigned>(self, _: Index) -> (Vec<{ Size - 1 }, Element>, Element)
     where
         _: Verify<{ Size > 0 }>,
@@ -63,7 +59,6 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
         (Vec(Default::default(), v), e)
     }
 
-    #[verify]
     pub fn truncate<NewSize: Unsigned>(self, _: NewSize) -> Vec<NewSize, Element>
     where
         _: Verify<{ NewSize < Size }>,
