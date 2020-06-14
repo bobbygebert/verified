@@ -36,48 +36,10 @@ fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
 
 struct VerifiableItem(syn::Item);
 
-// TODO: Test this impl
 impl syn::parse::Parse for VerifiableItem {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let mut item: syn::Item = input.parse()?;
-        match &mut item {
-            syn::Item::Fn(item) => {
-                let mut where_clause = item.sig.generics.make_where_clause();
-                replace_verify_bound(&mut where_clause)?;
-                // TODO: Support types in other locations
-                if let syn::ReturnType::Type(_, ref mut ty) = &mut item.sig.output {
-                    Translator::new(&mut where_clause).translate(ty.as_mut())?;
-                }
-            }
-            syn::Item::Impl(item) => {
-                let mut where_clause = item.generics.make_where_clause();
-                replace_verify_bound(&mut where_clause)?;
-                Translator::new(&mut where_clause).translate(item.self_ty.as_mut())?;
-                for item in &mut item.items {
-                    match item {
-                        syn::ImplItem::Method(item) => {
-                            let mut where_clause = item.sig.generics.make_where_clause();
-                            replace_verify_bound(&mut where_clause)?;
-                            // TODO: Support types in other locations
-                            if let syn::ReturnType::Type(_, ref mut ty) = &mut item.sig.output {
-                                Translator::new(&mut where_clause).translate(ty.as_mut())?;
-                            }
-                        }
-                        syn::ImplItem::Type(item) => {
-                            // TODO: Support types in other locations
-                            Translator::new(&mut where_clause).translate(&mut item.ty)?;
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            item => {
-                return Err(syn::Error::new(
-                    item.span(),
-                    "expected `fn` or `impl`".to_string(),
-                ))
-            }
-        }
+        item.translate()?;
         Ok(Self(item))
     }
 }
@@ -88,15 +50,25 @@ impl quote::ToTokens for VerifiableItem {
     }
 }
 
-impl TryFrom<syn::PathArguments> for Logic {
-    type Error = syn::Error;
-    fn try_from(generics: syn::PathArguments) -> syn::Result<Self> {
+impl From<Vec<syn::GenericArgument>> for Logic {
+    fn from(generics: Vec<syn::GenericArgument>) -> Self {
+        Self {
+            clauses: generics
+                .into_iter()
+                .map(|arg| syn::parse_quote! { #arg })
+                .collect(),
+        }
+    }
+}
+
+impl From<syn::PathArguments> for Logic {
+    fn from(generics: syn::PathArguments) -> Self {
         match generics {
             syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
-                ref args,
+                args,
                 ..
-            }) => Ok(syn::parse2(args.to_token_stream())?),
-            _ => Ok(Logic { clauses: vec![] }),
+            }) => args.into_iter().collect::<Vec<_>>().into(),
+            _ => Logic { clauses: vec![] },
         }
     }
 }
@@ -118,6 +90,60 @@ impl syn::parse::Parse for Logic {
 //   |_||_|  \__,_|_| |_|___/_|\__,_|\__\___/|_|
 //  FIGLET: Translator
 
+trait Translate {
+    fn translate(&mut self) -> syn::Result<()>;
+}
+
+impl Translate for syn::Item {
+    fn translate(&mut self) -> syn::Result<()> {
+        // TODO: support translation of other item types.
+        match self {
+            // TODO: support translation of rest of function;
+            syn::Item::Fn(item) => Ok({
+                let mut where_clause = item.sig.generics.make_where_clause();
+                replace_verify_bound(&mut where_clause)?;
+                Translator::new(&mut where_clause).translate(&mut item.sig.output)?;
+            }),
+            // TODO: support translation of rest of impl;
+            syn::Item::Impl(item) => Ok({
+                let mut where_clause = item.generics.make_where_clause();
+                replace_verify_bound(&mut where_clause)?;
+                let mut translator = Translator::new(&mut where_clause);
+                translator.translate(item.self_ty.as_mut())?;
+                for item in &mut item.items {
+                    translator.translate(item)?;
+                }
+            }),
+            item => Err(syn::Error::new(
+                item.span(),
+                "expected `fn` or `impl`".to_string(),
+            )),
+        }
+    }
+}
+
+impl Translate for syn::ItemFn {
+    fn translate(&mut self) -> syn::Result<()> {
+        let mut where_clause = self.sig.generics.make_where_clause();
+        replace_verify_bound(&mut where_clause)?;
+        Translator::new(&mut where_clause).translate(&mut self.sig.output)?;
+        Ok(())
+    }
+}
+
+impl Translate for syn::ItemImpl {
+    fn translate(&mut self) -> syn::Result<()> {
+        let mut where_clause = self.generics.make_where_clause();
+        replace_verify_bound(&mut where_clause)?;
+        let mut translator = Translator::new(&mut where_clause);
+        translator.translate(self.self_ty.as_mut())?;
+        for item in &mut self.items {
+            translator.translate(item)?;
+        }
+        Ok(())
+    }
+}
+
 struct Translator<'g> {
     where_clause: &'g mut syn::WhereClause,
 }
@@ -127,10 +153,16 @@ impl<'g> Translator<'g> {
         Self { where_clause }
     }
 
-    fn translate(&mut self, generics: &mut impl Generics) -> syn::Result<()> {
-        for generics in generics.generics().into_iter() {
+    fn translate(&mut self, item: &mut impl Generics) -> syn::Result<()> {
+        let logic = item
+            .generics()
+            .iter()
+            .clone()
+            .map(|generics| Into::<Logic>::into((*generics).clone()))
+            .collect::<Vec<_>>();
+
+        for (generics, logic) in item.generics().into_iter().zip(logic.iter()) {
             let generics: &mut syn::PathArguments = generics;
-            let logic: Logic = generics.clone().try_into()?;
             let new_generics: &Vec<syn::Type> = &logic
                 .clauses
                 .clone()
@@ -144,8 +176,12 @@ impl<'g> Translator<'g> {
                     new_generics.into_iter().map(|ty| syn::parse_quote!(#ty)),
                 );
             }
+        }
 
-            self.where_clause.predicates.extend(
+        let where_clause = item.where_clause().unwrap_or(self.where_clause);
+        for logic in logic {
+            replace_verify_bound(where_clause)?;
+            where_clause.predicates.extend(
                 &mut logic
                     .clauses
                     .into_iter()
@@ -176,27 +212,185 @@ impl<'g> Translator<'g> {
 
 trait Generics {
     fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments>;
+    fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
+        None
+    }
 }
 
-// TODO: Support other types
+impl Generics for syn::FnArg {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        match self {
+            syn::FnArg::Receiver(_) => vec![],
+            syn::FnArg::Typed(pat) => pat.ty.generics(),
+        }
+    }
+}
+
+impl Generics for syn::BareFnArg {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.ty.generics()
+    }
+}
+
+impl Generics for syn::Path {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.segments
+            .iter_mut()
+            .map(|segment| segment.generics())
+            .flatten()
+            .filter(|generics| **generics != syn::PathArguments::None)
+            .collect()
+    }
+}
+
+impl Generics for syn::ReturnType {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        match self {
+            syn::ReturnType::Default => vec![],
+            syn::ReturnType::Type(_, ty) => ty.generics(),
+        }
+    }
+}
+
+impl Generics for syn::ItemFn {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.sig.output.generics()
+    }
+
+    fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
+        Some(self.sig.generics.make_where_clause())
+    }
+}
+
+impl Generics for syn::ImplItem {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        // TODO: implement support for other items.
+        match self {
+            syn::ImplItem::Method(item) => item.generics(),
+            syn::ImplItem::Type(item) => item.generics(),
+            _ => vec![],
+        }
+    }
+
+    fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
+        match self {
+            syn::ImplItem::Method(item) => item.where_clause(),
+            syn::ImplItem::Type(item) => item.where_clause(),
+            _ => None,
+        }
+    }
+}
+
+impl Generics for syn::ImplItemMethod {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.sig
+            .inputs
+            .iter_mut()
+            .map(|arg| arg.generics())
+            .flatten()
+            .chain(self.sig.output.generics())
+            .collect()
+    }
+
+    fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
+        Some(self.sig.generics.make_where_clause())
+    }
+}
+
+impl Generics for syn::ImplItemType {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.ty.generics()
+    }
+}
+
 impl Generics for syn::Type {
     fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
         match self {
+            syn::Type::Array(ty) => ty.generics(),
+            syn::Type::BareFn(ty) => ty.generics(),
+            syn::Type::ImplTrait(ty) => ty.generics(),
+            syn::Type::Paren(ty) => ty.generics(),
             syn::Type::Path(ty) => ty.generics(),
+            syn::Type::Ptr(ty) => ty.generics(),
+            syn::Type::Reference(ty) => ty.generics(),
+            syn::Type::Slice(ty) => ty.generics(),
+            syn::Type::TraitObject(ty) => ty.generics(),
             syn::Type::Tuple(ty) => ty.generics(),
             _ => vec![],
         }
     }
 }
 
+impl Generics for syn::TypeArray {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.elem.generics()
+    }
+}
+
+impl Generics for syn::TypeBareFn {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.inputs
+            .iter_mut()
+            .map(|arg| arg.generics())
+            .flatten()
+            .chain(self.output.generics())
+            .collect()
+    }
+}
+
+impl Generics for syn::TypeImplTrait {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.bounds
+            .iter_mut()
+            .map(|bound| match bound {
+                syn::TypeParamBound::Trait(trait_bound) => trait_bound.path.generics(),
+                syn::TypeParamBound::Lifetime(_) => vec![],
+            })
+            .flatten()
+            .collect()
+    }
+}
+
+impl Generics for syn::TypeParen {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.elem.generics()
+    }
+}
+
 impl Generics for syn::TypePath {
     fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
-        let segments = &mut self.path.segments;
-        if segments.len() > 0 {
-            segments.last_mut().unwrap().generics()
-        } else {
-            vec![]
-        }
+        self.path.generics()
+    }
+}
+
+impl Generics for syn::TypePtr {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.elem.generics()
+    }
+}
+
+impl Generics for syn::TypeReference {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.elem.generics()
+    }
+}
+
+impl Generics for syn::TypeSlice {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.elem.generics()
+    }
+}
+
+impl Generics for syn::TypeTraitObject {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.bounds
+            .iter_mut()
+            .map(|bound| match bound {
+                syn::TypeParamBound::Trait(trait_bound) => trait_bound.path.generics(),
+                syn::TypeParamBound::Lifetime(_) => vec![],
+            })
+            .flatten()
+            .collect()
     }
 }
 
@@ -212,7 +406,13 @@ impl Generics for syn::TypeTuple {
 
 impl Generics for syn::PathSegment {
     fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
-        vec![&mut self.arguments]
+        self.arguments.generics()
+    }
+}
+
+impl Generics for syn::PathArguments {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        vec![self]
     }
 }
 
@@ -273,7 +473,7 @@ fn replace_verify_bound(where_clause: &mut syn::WhereClause) -> syn::Result<()> 
         Err(syn::Error::new(path.span(), "expected `Verify<_>`"))
     }?;
 
-    let logic: Logic = generics.clone().try_into()?;
+    let logic: Logic = generics.clone().into();
 
     for clause in logic.clauses.into_iter() {
         predicates.extend(
@@ -615,11 +815,121 @@ mod tests {
         }};
     }
 
+    macro_rules! generics {
+        ($(<$($t:tt),*>),*$(,)?) => {
+            vec![
+                $(&mut syn::PathArguments::AngleBracketed(parse_quote! { <$($t),*> })),*
+            ]
+        };
+        ($(::<$($t:tt),*>),*$(,)?) => {
+            vec![
+                $(&mut syn::PathArguments::AngleBracketed(parse_quote! { ::<$($t),*> })),*
+            ]
+        };
+    }
+
     fn assert_into<L: TryInto<R>, R: std::fmt::Debug + Eq>(l: L, r: R)
     where
         <L as TryInto<R>>::Error: std::fmt::Debug,
     {
         assert_eq!(l.try_into().unwrap(), r)
+    }
+
+    fn assert_generics<Ty: Generics>(mut ty: Ty, expected: Vec<&mut syn::PathArguments>) {
+        assert_eq!(ty.generics(), expected)
+    }
+
+    //  _____                       __     ____                      _
+    // |_   _|   _ _ __   ___       \ \   / ___| ___ _ __   ___ _ __(_) ___ ___
+    //   | || | | | '_ \ / _ \  _____\ \ | |  _ / _ \ '_ \ / _ \ '__| |/ __/ __|
+    //   | || |_| | |_) |  __/ |_____/ / | |_| |  __/ | | |  __/ |  | | (__\__ \
+    //   |_| \__, | .__/ \___|      /_/   \____|\___|_| |_|\___|_|  |_|\___|___/
+    //       |___/|_|
+    //  FIGLET: Type -> Generics
+
+    #[test]
+    fn ident_path_segment_yields_generic_args() {
+        assert_generics::<syn::Type>(parse_quote! { Type<A, B, C> }, generics![<A, B, C>]);
+    }
+
+    #[test]
+    fn colon_path_segment_yields_generic_args() {
+        assert_generics::<syn::Type>(parse_quote! { Type::<A, B, C> }, generics![::<A, B, C>]);
+    }
+
+    #[test]
+    fn path_yields_generics_from_all_segments() {
+        assert_generics::<syn::Type>(
+            parse_quote! { a::<A>::b::<B>::c::<C> },
+            generics![::<A>, ::<B>, ::<C>],
+        );
+    }
+
+    #[test]
+    fn generics_from_each_tuple_element_are_collected() {
+        assert_generics::<syn::Type>(parse_quote! { (L<A, B>, R<C>) }, generics![<A, B>, <C>]);
+    }
+
+    #[test]
+    fn slice_type_yields_generic_args() {
+        assert_generics::<syn::Type>(parse_quote! { [Type<A, B>] }, generics![<A, B>]);
+    }
+
+    #[test]
+    fn array_type_yields_generic_args() {
+        assert_generics::<syn::Type>(parse_quote! { [Type<C>; 0] }, generics![<C>]);
+    }
+
+    #[test]
+    fn ptr_type_yields_generic_args() {
+        assert_generics::<syn::Type>(parse_quote! { *const Type<C> }, generics![<C>]);
+    }
+
+    #[test]
+    fn ref_type_yields_generic_args() {
+        assert_generics::<syn::Type>(parse_quote! { &Type<C> }, generics![<C>]);
+    }
+
+    #[test]
+    fn paren_type_yields_generic_args() {
+        assert_generics::<syn::Type>(parse_quote! { (Type<C>) }, generics![<C>]);
+    }
+
+    #[test]
+    fn impl_trait_type_yields_generic_args() {
+        assert_generics::<syn::Type>(
+            parse_quote! { impl Trait0<A> + Trait1<B, C>},
+            generics![<A>, <B, C>],
+        );
+    }
+
+    #[test]
+    fn trait_object_type_yields_generic_args() {
+        assert_generics::<syn::Type>(
+            parse_quote! { dyn Trait0<A, B> + Trait1<C>},
+            generics![<A, B>, <C>],
+        );
+    }
+
+    #[test]
+    fn bare_fn_type_yields_generic_args_for_inputs_and_outputs() {
+        assert_generics::<syn::Type>(
+            parse_quote! { fn(l: Left<A, B>, r: Right<C>) -> Out<D> },
+            generics![<A, B>, <C>, <D>],
+        );
+    }
+
+    #[test]
+    fn impl_item_method_yields_generic_args_for_inputs_and_outputs() {
+        assert_generics::<syn::ImplItem>(
+            parse_quote! { fn f(l: Left<A, B>, r: Right<C>) -> Out<D> { Default::default() } },
+            generics![<A, B>, <C>, <D>],
+        );
+    }
+
+    #[test]
+    fn impl_item_type_yields_generic_args_for_inputs_and_outputs() {
+        assert_generics::<syn::ImplItem>(parse_quote! { type Type = Impl<D>; }, generics![<D>]);
     }
 
     //   ___              __    _____
@@ -831,8 +1141,8 @@ mod tests {
         assert_into(
             op! { A + B },
             vec![
-                predicate! {{ <A as Add<B>>::Output  }: { Unsigned }},
-                predicate! {{ <A as Add<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Add<B>>::Output }: { Unsigned }},
+                predicate! {{ <A as Add<B>>::Output }: { Cmp }},
                 predicate! {{ <A as Add<B>>::Output }: { IsEqual<<A as Add<B>>::Output> }},
                 predicate! {{ A }: { Add<B> }},
             ],
@@ -840,8 +1150,8 @@ mod tests {
         assert_into(
             op! { A / B },
             vec![
-                predicate! {{ <A as Div<B>>::Output  }: { Unsigned }},
-                predicate! {{ <A as Div<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Div<B>>::Output }: { Unsigned }},
+                predicate! {{ <A as Div<B>>::Output }: { Cmp }},
                 predicate! {{ <A as Div<B>>::Output }: { IsEqual<<A as Div<B>>::Output> }},
                 predicate! {{ A }: { Div<B> }},
             ],
@@ -849,8 +1159,8 @@ mod tests {
         assert_into(
             op! { A * B },
             vec![
-                predicate! {{ <A as Mul<B>>::Output  }: { Unsigned }},
-                predicate! {{ <A as Mul<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Mul<B>>::Output }: { Unsigned }},
+                predicate! {{ <A as Mul<B>>::Output }: { Cmp }},
                 predicate! {{ <A as Mul<B>>::Output }: { IsEqual<<A as Mul<B>>::Output> }},
                 predicate! {{ A }: { Mul<B> }},
             ],
@@ -858,8 +1168,8 @@ mod tests {
         assert_into(
             op! { A % B },
             vec![
-                predicate! {{ <A as Rem<B>>::Output  }: { Unsigned }},
-                predicate! {{ <A as Rem<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Rem<B>>::Output }: { Unsigned }},
+                predicate! {{ <A as Rem<B>>::Output }: { Cmp }},
                 predicate! {{ <A as Rem<B>>::Output }: { IsEqual<<A as Rem<B>>::Output> }},
                 predicate! {{ A }: { Rem<B> }},
             ],
@@ -867,8 +1177,8 @@ mod tests {
         assert_into(
             op! { A << B },
             vec![
-                predicate! {{ <A as Shl<B>>::Output  }: { Unsigned }},
-                predicate! {{ <A as Shl<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Shl<B>>::Output }: { Unsigned }},
+                predicate! {{ <A as Shl<B>>::Output }: { Cmp }},
                 predicate! {{ <A as Shl<B>>::Output }: { IsEqual<<A as Shl<B>>::Output> }},
                 predicate! {{ A }: { Shl<B> }},
             ],
@@ -876,8 +1186,8 @@ mod tests {
         assert_into(
             op! { A >> B },
             vec![
-                predicate! {{ <A as Shr<B>>::Output  }: { Unsigned }},
-                predicate! {{ <A as Shr<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Shr<B>>::Output }: { Unsigned }},
+                predicate! {{ <A as Shr<B>>::Output }: { Cmp }},
                 predicate! {{ <A as Shr<B>>::Output }: { IsEqual<<A as Shr<B>>::Output> }},
                 predicate! {{ A }: { Shr<B> }},
             ],
@@ -885,8 +1195,8 @@ mod tests {
         assert_into(
             op! { A - B },
             vec![
-                predicate! {{ <A as Sub<B>>::Output  }: { Unsigned }},
-                predicate! {{ <A as Sub<B>>::Output  }: { Cmp }},
+                predicate! {{ <A as Sub<B>>::Output }: { Unsigned }},
+                predicate! {{ <A as Sub<B>>::Output }: { Cmp }},
                 predicate! {{ <A as Sub<B>>::Output }: { IsEqual<<A as Sub<B>>::Output> }},
                 predicate! {{ A }: { Sub<B> }},
             ],
