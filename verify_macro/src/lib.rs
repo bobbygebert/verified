@@ -99,21 +99,9 @@ impl Translate for syn::Item {
         // TODO: support translation of other item types.
         match self {
             // TODO: support translation of rest of function;
-            syn::Item::Fn(item) => Ok({
-                let mut where_clause = item.sig.generics.make_where_clause();
-                replace_verify_bound(&mut where_clause)?;
-                Translator::new(&mut where_clause).translate(&mut item.sig.output)?;
-            }),
+            syn::Item::Fn(item) => item.translate(),
             // TODO: support translation of rest of impl;
-            syn::Item::Impl(item) => Ok({
-                let mut where_clause = item.generics.make_where_clause();
-                replace_verify_bound(&mut where_clause)?;
-                let mut translator = Translator::new(&mut where_clause);
-                translator.translate(item.self_ty.as_mut())?;
-                for item in &mut item.items {
-                    translator.translate(item)?;
-                }
-            }),
+            syn::Item::Impl(item) => item.translate(),
             item => Err(syn::Error::new(
                 item.span(),
                 "expected `fn` or `impl`".to_string(),
@@ -124,19 +112,19 @@ impl Translate for syn::Item {
 
 impl Translate for syn::ItemFn {
     fn translate(&mut self) -> syn::Result<()> {
-        let mut where_clause = self.sig.generics.make_where_clause();
-        replace_verify_bound(&mut where_clause)?;
-        Translator::new(&mut where_clause).translate(&mut self.sig.output)?;
+        let mut _unused_where_clause = syn::parse_quote! { where };
+        Translator::new(&mut _unused_where_clause).translate(&mut self.sig)?;
         Ok(())
     }
 }
 
 impl Translate for syn::ItemImpl {
     fn translate(&mut self) -> syn::Result<()> {
+        let mut _unused_where_clause = syn::parse_quote! { where };
+        Translator::new(&mut _unused_where_clause).translate(self)?;
+
         let mut where_clause = self.generics.make_where_clause();
-        replace_verify_bound(&mut where_clause)?;
         let mut translator = Translator::new(&mut where_clause);
-        translator.translate(self.self_ty.as_mut())?;
         for item in &mut self.items {
             translator.translate(item)?;
         }
@@ -154,6 +142,9 @@ impl<'g> Translator<'g> {
     }
 
     fn translate(&mut self, item: &mut impl Generics) -> syn::Result<()> {
+        let verify_predicates =
+            remove_verify_bound(item.where_clause().unwrap_or(self.where_clause))?;
+
         let logic = item
             .generics()
             .iter()
@@ -180,7 +171,6 @@ impl<'g> Translator<'g> {
 
         let where_clause = item.where_clause().unwrap_or(self.where_clause);
         for logic in logic {
-            replace_verify_bound(where_clause)?;
             where_clause.predicates.extend(
                 &mut logic
                     .clauses
@@ -206,6 +196,7 @@ impl<'g> Translator<'g> {
                     .flatten(),
             );
         }
+        where_clause.predicates.extend(verify_predicates);
         Ok(())
     }
 }
@@ -214,6 +205,105 @@ trait Generics {
     fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments>;
     fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
         None
+    }
+}
+
+impl Generics for syn::Signature {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        let mut generics = self.generics.generics();
+        generics.append(&mut self.inputs.generics());
+        generics.append(&mut self.output.generics());
+        generics
+    }
+
+    fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
+        self.generics.where_clause()
+    }
+}
+
+impl Generics for syn::Generics {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.make_where_clause();
+        let where_clause = self.where_clause.as_mut().unwrap();
+        let mut generics = where_clause.generics();
+        generics.append(
+            &mut self
+                .params
+                .iter_mut()
+                .map(|param| match param {
+                    syn::GenericParam::Type(item) => item.bounds.generics(),
+                    // TODO: add support for other cases
+                    _ => vec![],
+                })
+                .flatten()
+                .collect::<Vec<_>>(),
+        );
+        generics
+    }
+
+    fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
+        Some(self.make_where_clause())
+    }
+}
+
+impl Generics for syn::WhereClause {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.predicates
+            .iter_mut()
+            .map(|predicate| match predicate {
+                syn::WherePredicate::Type(item) => {
+                    let mut generics = item.bounded_ty.generics();
+                    generics.append(&mut item.bounds.generics());
+                    generics
+                }
+                // TODO: add support for other cases
+                _ => vec![],
+            })
+            .flatten()
+            .collect()
+    }
+}
+
+impl Generics for syn::punctuated::Punctuated<syn::TypeParamBound, syn::Token!(+)> {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.iter_mut()
+            .map(|bound| match bound {
+                syn::TypeParamBound::Trait(trait_bound) => trait_bound.path.generics(),
+                syn::TypeParamBound::Lifetime(_) => vec![],
+            })
+            .flatten()
+            .collect()
+    }
+}
+
+impl Generics for syn::punctuated::Punctuated<syn::FnArg, syn::Token!(,)> {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.iter_mut()
+            .map(|arg| arg.generics())
+            .flatten()
+            .collect()
+    }
+}
+
+impl Generics for syn::ItemFn {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        self.sig.generics()
+    }
+
+    fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
+        self.sig.where_clause()
+    }
+}
+
+impl Generics for syn::ItemImpl {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        let mut generics = self.generics.generics();
+        generics.append(&mut self.self_ty.generics());
+        generics
+    }
+
+    fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
+        self.generics.where_clause()
     }
 }
 
@@ -252,16 +342,6 @@ impl Generics for syn::ReturnType {
     }
 }
 
-impl Generics for syn::ItemFn {
-    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
-        self.sig.output.generics()
-    }
-
-    fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
-        Some(self.sig.generics.make_where_clause())
-    }
-}
-
 impl Generics for syn::ImplItem {
     fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
         // TODO: implement support for other items.
@@ -283,17 +363,11 @@ impl Generics for syn::ImplItem {
 
 impl Generics for syn::ImplItemMethod {
     fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
-        self.sig
-            .inputs
-            .iter_mut()
-            .map(|arg| arg.generics())
-            .flatten()
-            .chain(self.sig.output.generics())
-            .collect()
+        self.sig.generics()
     }
 
     fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
-        Some(self.sig.generics.make_where_clause())
+        self.sig.where_clause()
     }
 }
 
@@ -423,8 +497,10 @@ impl Generics for syn::PathArguments {
 //   |_||_|  \__,_|_| |_|___/_|\__,_|\__|_|\___/|_| |_|___/
 //  FIGLET: Translations
 
-fn replace_verify_bound(where_clause: &mut syn::WhereClause) -> syn::Result<()> {
-    let (mut predicates, inferred_bounds): (Vec<_>, Vec<_>) = where_clause
+fn remove_verify_bound(
+    where_clause: &mut syn::WhereClause,
+) -> syn::Result<Vec<syn::WherePredicate>> {
+    let (predicates, inferred_bounds): (Vec<_>, Vec<_>) = where_clause
         .clone()
         .predicates
         .into_iter()
@@ -435,9 +511,10 @@ fn replace_verify_bound(where_clause: &mut syn::WhereClause) -> syn::Result<()> 
             }) => false,
             _ => true,
         });
+    where_clause.predicates = predicates.into_iter().collect();
 
     if inferred_bounds.len() == 0 {
-        return Ok(());
+        return Ok(vec![]);
     }
 
     if inferred_bounds.len() > 1 {
@@ -475,9 +552,11 @@ fn replace_verify_bound(where_clause: &mut syn::WhereClause) -> syn::Result<()> 
 
     let logic: Logic = generics.clone().into();
 
-    for clause in logic.clauses.into_iter() {
-        predicates.extend(
-            vec![syn::WherePredicate::Type(TryInto::try_into(
+    let predicates = logic
+        .clauses
+        .into_iter()
+        .map(|clause| {
+            Ok(vec![syn::WherePredicate::Type(TryInto::try_into(
                 TryInto::<Op>::try_into(clause.clone())?,
             )?)]
             .into_iter()
@@ -485,12 +564,10 @@ fn replace_verify_bound(where_clause: &mut syn::WhereClause) -> syn::Result<()> 
                 TryInto::<Vec<_>>::try_into(TryInto::<Op>::try_into(clause)?)?
                     .into_iter()
                     .map(|p| syn::WherePredicate::Type(p)),
-            ),
-        );
-    }
-
-    where_clause.predicates = std::iter::FromIterator::from_iter(predicates);
-    Ok(())
+            ))
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+    Ok(predicates.into_iter().flatten().collect())
 }
 
 macro_rules! predicate {
@@ -930,6 +1007,34 @@ mod tests {
     #[test]
     fn impl_item_type_yields_generic_args_for_inputs_and_outputs() {
         assert_generics::<syn::ImplItem>(parse_quote! { type Type = Impl<D>; }, generics![<D>]);
+    }
+
+    #[test]
+    fn item_fn_yields_generic_args_for_inputs_outputs_and_generics() {
+        assert_generics::<syn::ItemFn>(
+            parse_quote! {
+                fn f<G0: Trait<A>, G1: Trait<B>>(a0: A0<G0, C>, a1: A1<G1, D>) -> R<E>
+                where
+                    P0<F>: Trait<G>,
+                {
+                }
+            },
+            generics![<F>, <G>, <A>, <B>, <G0, C>, <G1, D>, <E>],
+        );
+    }
+
+    #[test]
+    fn item_impl_yields_generic_args_for_self_and_generics() {
+        assert_generics::<syn::ItemImpl>(
+            parse_quote! {
+                impl<G0: Trait<A>, G1: Trait<B>> Type<G0, G1>
+                where
+                    P0<F>: Trait<G>,
+                {
+                }
+            },
+            generics![<F>, <G>, <A>, <B>, <G0, G1>],
+        );
     }
 
     //   ___              __    _____
