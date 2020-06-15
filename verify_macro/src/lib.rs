@@ -73,16 +73,6 @@ impl From<syn::PathArguments> for Logic {
     }
 }
 
-impl syn::parse::Parse for Logic {
-    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
-        let clauses =
-            syn::punctuated::Punctuated::<syn::Expr, syn::Token!(,)>::parse_terminated(input)?
-                .into_iter()
-                .collect();
-        Ok(Self { clauses })
-    }
-}
-
 //  _____                    _       _
 // |_   _| __ __ _ _ __  ___| | __ _| |_ ___  _ __
 //   | || '__/ _` | '_ \/ __| |/ _` | __/ _ \| '__|
@@ -112,8 +102,13 @@ impl Translate for syn::Item {
 
 impl Translate for syn::ItemFn {
     fn translate(&mut self) -> syn::Result<()> {
-        let mut _unused_where_clause = syn::parse_quote! { where };
-        Translator::new(&mut _unused_where_clause).translate(&mut self.sig)?;
+        let mut additional_where_clause = syn::parse_quote! { where };
+        Translator::new(&mut additional_where_clause).translate(&mut self.sig)?;
+        self.sig
+            .generics
+            .make_where_clause()
+            .predicates
+            .extend(additional_where_clause.predicates);
         Ok(())
     }
 }
@@ -144,6 +139,14 @@ impl<'g> Translator<'g> {
     fn translate(&mut self, item: &mut impl Generics) -> syn::Result<()> {
         let verify_predicates =
             remove_verify_bound(item.where_clause().unwrap_or(self.where_clause))?;
+
+        for generics in item.generics() {
+            if let syn::PathArguments::AngleBracketed(generic_args) = generics {
+                for arg in generic_args.args.iter_mut() {
+                    self.translate(arg)?;
+                }
+            }
+        }
 
         let logic = item
             .generics()
@@ -196,12 +199,13 @@ impl<'g> Translator<'g> {
                     .flatten(),
             );
         }
+
         where_clause.predicates.extend(verify_predicates);
         Ok(())
     }
 }
 
-trait Generics {
+trait Generics: ToTokens {
     fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments>;
     fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
         None
@@ -243,6 +247,16 @@ impl Generics for syn::Generics {
 
     fn where_clause<'g>(&'g mut self) -> Option<&'g mut syn::WhereClause> {
         Some(self.make_where_clause())
+    }
+}
+
+impl Generics for syn::GenericArgument {
+    fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments> {
+        match self {
+            syn::GenericArgument::Type(item) => item.generics(),
+            // TODO: add support for other cases
+            _ => vec![],
+        }
     }
 }
 
@@ -728,6 +742,20 @@ impl TryFrom<Op> for syn::Type {
     }
 }
 
+impl TryFrom<syn::GenericArgument> for Op {
+    type Error = syn::Error;
+    fn try_from(arg: syn::GenericArgument) -> syn::Result<Self> {
+        match arg {
+            syn::GenericArgument::Const(expr) => expr.try_into(),
+            syn::GenericArgument::Type(ty) => Ok(Self::Path(syn::parse_quote!(#ty))),
+            unsupported_expr => Err(syn::Error::new(
+                unsupported_expr.span(),
+                "unsupported logical expression",
+            )),
+        }
+    }
+}
+
 impl TryFrom<syn::Expr> for Op {
     type Error = syn::Error;
     fn try_from(expr: syn::Expr) -> syn::Result<Self> {
@@ -796,7 +824,7 @@ impl TryFrom<syn::Lit> for Op {
 
 #[derive(Debug)]
 struct Logic {
-    clauses: Vec<syn::Expr>,
+    clauses: Vec<syn::GenericArgument>,
 }
 
 #[derive(Clone, Debug)]
@@ -1518,6 +1546,34 @@ mod tests {
                     A: Add<B>,
                 {
                     type Type = Output<<A as Add<B>>::Output>;
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn can_verify_type_construction_in_nested_types() {
+        parse_test! {
+            parse {
+                fn f<L0: Unsigned, L1: Unsigned>() -> Container<{L0 + 0}, Outer<{L1 + 1}>>
+                {
+                    Default::default()
+                }
+            },
+            expect {
+                fn f<L0: Unsigned, L1: Unsigned>(
+                ) -> Container<<L0 as Add<U0>>::Output, Outer<<L1 as Add<U1>>::Output>>
+                where
+                    <L0 as Add<U0>>::Output: Unsigned,
+                    <L0 as Add<U0>>::Output: Cmp,
+                    <L0 as Add<U0>>::Output: IsEqual<<L0 as Add<U0>>::Output>,
+                    L0: Add<U0>,
+                    <L1 as Add<U1>>::Output: Unsigned,
+                    <L1 as Add<U1>>::Output: Cmp,
+                    <L1 as Add<U1>>::Output: IsEqual<<L1 as Add<U1>>::Output>,
+                    L1: Add<U1>,
+                {
+                    Default::default()
                 }
             },
         }
