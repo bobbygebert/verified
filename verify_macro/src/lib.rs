@@ -20,7 +20,6 @@ pub fn verify(_attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
-// TODO: Clean up the branching logic here.
 fn generate_verifiable_item(item: TokenStream) -> syn::Result<TokenStream> {
     let item: VerifiableItem = syn::parse(item)?;
     Ok(item.0.into_token_stream().into())
@@ -86,11 +85,11 @@ trait Translate {
 
 impl Translate for syn::Item {
     fn translate(&mut self) -> syn::Result<()> {
-        // TODO: support translation of other item types.
+        // TODO:
+        // o support translation of other item types.
+        // o support translation of statements in blocks.
         match self {
-            // TODO: support translation of rest of function;
             syn::Item::Fn(item) => item.translate(),
-            // TODO: support translation of rest of impl;
             syn::Item::Impl(item) => item.translate(),
             item => Err(syn::Error::new(
                 item.span(),
@@ -204,6 +203,13 @@ impl<'g> Translator<'g> {
         Ok(())
     }
 }
+
+//   ____                      _
+//  / ___| ___ _ __   ___ _ __(_) ___ ___
+// | |  _ / _ \ '_ \ / _ \ '__| |/ __/ __|
+// | |_| |  __/ | | |  __/ |  | | (__\__ \
+//  \____|\___|_| |_|\___|_|  |_|\___|___/
+//  FIGLET: Generics
 
 trait Generics: ToTokens {
     fn generics<'g>(&'g mut self) -> Vec<&'g mut syn::PathArguments>;
