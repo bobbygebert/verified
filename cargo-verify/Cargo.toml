@@ -9,3 +9,6 @@ edition = "2018"
 [dependencies]
 combine = { version = "4.2.1", features = [ "regex" ] }
 regex = "1.3.9"
+
+[dev-dependencies]
+textwrap = "0.11.0"
