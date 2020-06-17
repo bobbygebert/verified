@@ -1,10 +1,11 @@
-//! This crate, in conjunction with the `verify_macro` crate, aims to facilitate the development of
-//! formally verifiable rust code.
+//! # Verifiable Rust
+//!
+//! A collection of crates to facilitate the development of formally verifiable rust code.
 //!
 //! Type level programming allows us to implement logic that can be verified by the compiler, which
 //! makes it possible to catch bugs at compile time, rather than at runtime.
 //!
-//! Say we have an algorithm who's runtime scales exponentially. We would like to be able to
+//! Say we have an algorithm where the runtime scales exponentially. We would like to be able to
 //! restrict the number of elements in our working set to a reasonable number, let's say 128, in
 //! order to ensure that the algorithm completes in a reasonable amount of time, every time.
 //!
@@ -39,9 +40,16 @@
 //! }
 //! ```
 //!
+//! # #\[verify\]
+//!
+//! The `verified` crate is built on top of the `typenum` crate, and provides syntactic sugar for
+//! defining type-level values via the `#[verify]` macro from the `verify_macro` crate. You can
+//! annotate almost any item with `#[verify]` (still a work in progress), and anywhere you would
+//! typically use a type like `<A as Add<B>>::Output`, you can now simply write `{ A + B }`.
+//!
 //! For a more complete example, see the `vec` module. Here is an abbreviated snippet:
 //!
-//! ```
+//! ```rust
 //! use verified::*;
 //! use std::vec::Vec as Raw;
 //!
@@ -101,6 +109,84 @@
 //!         (Vec(Default::default(), v), e)
 //!     }
 //! }
+//! ```
+//!
+//! # Verify<...>
+//!
+//! You may have noticed the strange where clauses that look like `_: Verify<{ ... }, ...>`. This
+//! `Verify` "trait" is processed by the `#[verify]` attribute. You can think of each argument as
+//! an expression that must evaluate to "true" in order to compile. This allows us to instrument
+//! our code with additional compile time checks for added safety.
+//!
+//! # $ Compiling
+//!
+//! The `verified` crate is built on top of the `typenum` crate. Naturally, the compiler errors can
+//! get pretty hairy. Here, I've accidentally typed `2` instead of `1` somewhere in the `vec`
+//! module. This is perhaps one of the less cryptic errors you may see...
+//!
+//! ```text
+//! $ cargo build
+//!
+//! error[E0277]: cannot add `typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>` to `Size`
+//!   --> verified/src/vec.rs:44:19
+//!    |
+//! 44 |         (self, e).into()
+//!    |                   ^^^^ no implementation for `Size + typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>`
+//!    |
+//!    = help: the trait `std::ops::Add<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>>` is not implemented for `Size`
+//! help: consider further restricting this bound with `+ std::ops::Add<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>>`
+//!   --> verified/src/vec.rs:28:12
+//!    |
+//! 28 | impl<Size: Unsigned, Element> Vec<Size, Element> {
+//!    |            ^^^^^^^^
+//!    = note: required because of the requirements on the impl of `std::convert::From<(vec::Vec<Size, Element>, Element)>` for `vec::Vec<<Size as std::ops::Add<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>>>::Output, Element>`
+//!    = note: required because of the requirements on the impl of `std::convert::Into<vec::Vec<<Size as std::ops::Add<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>>>::Output, Element>>` for `(vec::Vec<Size, Element>, Element)`
+//! ```
+//!
+//! `cargo-verify` tries to help by translating types into simple arithmetic expressions where
+//! possible.
+//!
+//! # $ cargo-verify
+//!
+//! ```text
+//! $ cargo verify build
+//!
+//! error[E0277]: cannot add `1` to `Size`
+//!   --> verified/src/vec.rs:44:19
+//!    |
+//! 44 |         (self, e).into()
+//!    |                   ^^^^ no implementation for `Size + 1`
+//!    |
+//!    = help: the trait `{ _ + 1 }` is not implemented for `Size`
+//! help: consider further restricting this bound with `+ { _ + 1 }`
+//!   --> verified/src/vec.rs:28:12
+//!    |
+//! 28 | impl<Size: Unsigned, Element> Vec<Size, Element> {
+//!    |            ^^^^^^^^
+//!    = note: required because of the requirements on the impl of `std::convert::From<(vec::Vec<Size, Element>, Element)>` for `vec::Vec<{ Size + 2 }, Element>`
+//!    = note: required because of the requirements on the impl of `std::convert::Into<vec::Vec<{ Size + 2 }, Element>>` for `(vec::Vec<Size, Element>, Element)`
+//!
+//!
+//! ```
+//!
+//! # Install
+//!
+//! ```text
+//! $ cargo install cargo-verify
+//! ```
+//!
+//! To upgrade:
+//!
+//! ```text
+//! $ cargo install --force cargo-verify
+//! ```
+//!
+//! Or clone and build with `$ cargo build` then place the binary in your $PATH.
+//!
+//! # Usage
+//!
+//! ```text
+//! $ cargo verify [COMMAND] [OPTIONS]...
 //! ```
 
 pub mod vec;
