@@ -6,7 +6,6 @@ authors = ["Bob Gebert <bobgebert7@gmail.com>"]
 edition = "2018"
 license = "MIT"
 repository = "https://github.com/bobbygebert/verified/"
-readme = "README.md"
 keywords = ["verify", "verifiable", "types", "type-level", "dependent"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
