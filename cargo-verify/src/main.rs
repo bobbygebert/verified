@@ -1,3 +1,4 @@
+use std::env;
 use std::io;
 use std::process::Command;
 use std::vec;
@@ -110,10 +111,10 @@ macro_rules! op {
 }
 
 fn main() {
-    let output = Command::new("cargo")
-        .args(vec!["build", "--color", "always"])
-        .output()
-        .unwrap()
-        .stderr;
+    let mut args: Vec<String> = env::args().skip(2).collect();
+    if !args.contains(&"--color".to_string()) {
+        args.extend(vec!["--color", "always"].into_iter().map(|a| a.to_string()));
+    }
+    let output = Command::new("cargo").args(args).output().unwrap().stderr;
     Translator::new(io::stderr()).translate(output);
 }
