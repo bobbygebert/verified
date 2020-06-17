@@ -41,9 +41,12 @@ fn main() {
     slow_routine::<String, U128>(Default::default());                                          
 }                                                                                              
 ```                                                                                            
-                                                                                               
+
+# #[verify]
+The `verified` crate is built on top of the `typenum` crate, and provides syntactic sugar for defining type-level values via the `#[verify]` macro from the `verify_macro` crate. You can annotate almost any item with `#[verify]` (still a work in progress), and anywhere you would typically use a type like `<A as Add<B>>::Output`, you can now simply write `{ A + B }`. 
+
 For a more complete example, see the `vec` module. Here is an abbreviated snippet:             
-                                                                                               
+
 ```rust                                                                                            
 use verified::*;                                                                               
 use std::vec::Vec as Raw;                                                                      
@@ -103,8 +106,11 @@ where
         let e = v.pop().unwrap();                                                              
         (Vec(Default::default(), v), e)                                                        
     }                                                                                          
-}                                                                                              
-```                                                                                            
+}                                                                                   
+```                                                                                 
+# Verify<...>
+You may have noticed the strange where clauses that look like `_: Verify<{ ... }, ...>`. This `Verify` "trait" is processed by the `#[verify]` attribute. You can think of each argument as an expression that must evaluate to "true" in order to compile. This allows us to instrument our code with additional compile time checks for added safety.
+
 # $ cargo-verify
 
 The `verified` crate is built on top of the `typenum` crate. Naturally, the compiler errors can get pretty hairy. Here, I've accidentally typed `2` instead of `1` somewhere in the `vec` module. This is perhaps one of the less cryptic errors you may see...
