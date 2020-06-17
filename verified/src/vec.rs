@@ -45,18 +45,18 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
     }
 
     pub fn insert<Index: Unsigned>(self, _: Index, e: Element) -> Vec<{ Size + 1 }, Element> {
-        let Self(_, mut v) = self;
+        let Self(s, mut v) = self;
         v.insert(Index::to_usize(), e);
-        Vec(Default::default(), v)
+        Vec(s + U1::new(), v)
     }
 
     pub fn remove<Index: Unsigned>(self, _: Index) -> (Vec<{ Size - 1 }, Element>, Element)
     where
         _: Verify<{ Size > 0 }>,
     {
-        let Self(_, mut v) = self;
+        let Self(s, mut v) = self;
         let e = v.remove(Index::to_usize());
-        (Vec(Default::default(), v), e)
+        (Vec(s - U1::new(), v), e)
     }
 
     pub fn truncate<NewSize: Unsigned>(self, _: NewSize) -> Vec<NewSize, Element>
@@ -65,7 +65,7 @@ impl<Size: Unsigned, Element> Vec<Size, Element> {
     {
         let Self(_, mut v) = self;
         v.truncate(NewSize::to_usize());
-        Vec(Default::default(), v)
+        Vec(NewSize::default(), v)
     }
 }
 
@@ -73,7 +73,7 @@ impl<Size: Unsigned, Element: Clone> Vec<Size, Element> {
     pub fn resize<NewSize: Unsigned>(self, _: NewSize, default: Element) -> Vec<NewSize, Element> {
         let Self(_, mut v) = self;
         v.resize(NewSize::to_usize(), default);
-        Vec(Default::default(), v)
+        Vec(NewSize::default(), v)
     }
 }
 
