@@ -1,6 +1,6 @@
 [package]
 name = "cargo-verify"
-description = "Prettier error messages for the `verified` crate"
+description = "Prettier error messages for the verified crate."
 version = "0.2.3"
 authors = ["Bob Gebert <bobgebert7@gmail.com>"]
 edition = "2018"
