@@ -130,9 +130,9 @@ impl<SizeL: Unsigned, SizeR: Unsigned, Element> std::ops::Add<Vec<SizeR, Element
 impl<Size: Unsigned, Element> std::convert::From<(Vec<Size, Element>, Element)>
     for Vec<{ Size + 1 }, Element>
 {
-    fn from((Vec(_, mut v), e): (Vec<Size, Element>, Element)) -> Self {
+    fn from((Vec(s, mut v), e): (Vec<Size, Element>, Element)) -> Self {
         v.push(e);
-        Self(Default::default(), v)
+        Self(s + U1::new(), v)
     }
 }
 
@@ -142,9 +142,9 @@ impl<Size: Unsigned, Element> std::convert::From<Vec<Size, Element>>
 where
     _: Verify<{ Size > 0 }>,
 {
-    fn from(Vec(_, mut v): Vec<Size, Element>) -> Self {
+    fn from(Vec(s, mut v): Vec<Size, Element>) -> Self {
         let e = v.pop().unwrap();
-        (Vec(Default::default(), v), e)
+        (Vec(s - U1::new(), v), e)
     }
 }
 
