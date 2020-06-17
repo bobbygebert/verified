@@ -1,13 +1,13 @@
 [package]
 name = "cargo-verify"
-version = "0.1.0"
+version = "0.2.3"
 authors = ["Bob Gebert <bobgebert7@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-verified = { path = "../verified", version = "0.2.2" }
+verified = { path = "../verified", version = "0.2.3" }
 combine = { version = "4.2.1", features = [ "regex" ] }
 regex = "1.3.9"
 
