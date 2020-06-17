@@ -1,6 +1,6 @@
 use crate::parse::{
-    Chunk, ChunkIter, Chunks, Expr, ExprApplication, ExprBinary, ExprUnary, ExprValue, GenericArg,
-    PathComponent, ValueBit, ValuePath, ValueUnsigned,
+    Chunk, ChunkIter, Chunks, Expr, ExprApplication, ExprBinary, ExprUnary, ExprValue, Fancy,
+    GenericArg, PathComponent, ValueBit, ValuePath, ValueUnsigned,
 };
 
 pub struct Translator<Output: std::io::Write> {
@@ -28,6 +28,21 @@ impl<Output: std::io::Write> Translator<Output> {
             }
         }
         self.output.write_all(&buffer).unwrap();
+    }
+}
+
+impl<Item: Into<Vec<u8>>> From<Fancy<Item>> for Vec<u8> {
+    fn from(Fancy { code, item }: Fancy<Item>) -> Self {
+        code.into_iter().chain(item.into()).collect()
+    }
+}
+
+impl From<ValueBit> for usize {
+    fn from(bit: ValueBit) -> Self {
+        match bit {
+            ValueBit::B0 => 0,
+            ValueBit::B1 => 1,
+        }
     }
 }
 
@@ -97,7 +112,7 @@ impl From<PathComponent> for Vec<u8> {
                 )
                 .chain(vec!['>' as u8])
                 .collect::<Vec<_>>(),
-            PathComponent::Ident(ident) => ident,
+            PathComponent::Ident(item) => item.into(),
             PathComponent::Colon => "::".into(),
         }
     }
@@ -113,48 +128,80 @@ impl From<ValuePath> for Vec<u8> {
     }
 }
 
+impl From<ExprValue> for Vec<u8> {
+    fn from(expr: ExprValue) -> Self {
+        match expr {
+            ExprValue::Bit(expr) => expr.into(),
+            ExprValue::Unsigned(expr) => expr.into(),
+            ExprValue::Path(expr) => expr.into(),
+        }
+    }
+}
+
 impl From<ExprApplication> for Vec<u8> {
     fn from(ExprApplication { lhs, application }: ExprApplication) -> Self {
         match *application {
-            Expr::Binary(ExprBinary {
-                op,
-                expr,
-                result: Some(result),
-            }) => format!(
-                "{{ {} {} {} == {} }}",
-                std::str::from_utf8(&Into::<Self>::into(*lhs)).unwrap(),
-                std::str::from_utf8(&op).unwrap(),
-                std::str::from_utf8(&Into::<Self>::into(*expr)).unwrap(),
-                std::str::from_utf8(&Into::<Self>::into(*result)).unwrap()
-            )
-            .into(),
-            Expr::Binary(ExprBinary {
-                op,
-                expr,
-                result: None,
-            }) => format!(
-                "{{ {} {} {} }}",
-                std::str::from_utf8(&Into::<Self>::into(*lhs)).unwrap(),
-                std::str::from_utf8(&op).unwrap(),
-                std::str::from_utf8(&Into::<Self>::into(*expr)).unwrap()
-            )
-            .into(),
-            Expr::Unary(ExprUnary::Not { result: None }) => format!(
-                "!{}",
-                std::str::from_utf8(&Into::<Self>::into(*lhs)).unwrap()
-            )
-            .into(),
-            Expr::Unary(ExprUnary::Not {
-                result: Some(result),
-            }) => format!(
-                "{{ !{} == {} }}",
-                std::str::from_utf8(&Into::<Self>::into(*lhs)).unwrap(),
-                std::str::from_utf8(&Into::<Self>::into(*result)).unwrap(),
-            )
-            .into(),
-            Expr::Value(ExprValue::Bit(expr)) => expr.into(),
-            Expr::Value(ExprValue::Unsigned(expr)) => expr.into(),
-            Expr::Value(ExprValue::Path(expr)) => expr.into(),
+            Expr::Binary(Fancy {
+                code,
+                item:
+                    ExprBinary {
+                        op,
+                        expr,
+                        result: Some(result),
+                    },
+            }) => code
+                .into_iter()
+                .chain(Into::<Self>::into("{ "))
+                .chain(Into::<Self>::into(*lhs))
+                .chain(Into::<Self>::into(" "))
+                .chain(op)
+                .chain(Into::<Self>::into(" "))
+                .chain(Into::<Self>::into(*expr))
+                .chain(Into::<Self>::into(" == "))
+                .chain(Into::<Self>::into(*result))
+                .chain(Into::<Self>::into(" }"))
+                .collect(),
+            Expr::Binary(Fancy {
+                code,
+                item:
+                    ExprBinary {
+                        op,
+                        expr,
+                        result: None,
+                    },
+            }) => code
+                .into_iter()
+                .chain(Into::<Self>::into("{ "))
+                .chain(Into::<Self>::into(*lhs))
+                .chain(Into::<Self>::into(" "))
+                .chain(op)
+                .chain(Into::<Self>::into(" "))
+                .chain(Into::<Self>::into(*expr))
+                .chain(Into::<Self>::into(" }"))
+                .collect(),
+            Expr::Unary(Fancy {
+                code,
+                item: ExprUnary::Not { result: None },
+            }) => code
+                .into_iter()
+                .chain(Into::<Self>::into("!"))
+                .chain(Into::<Self>::into(*lhs))
+                .collect(),
+            Expr::Unary(Fancy {
+                code,
+                item: ExprUnary::Not {
+                    result: Some(result),
+                },
+            }) => code
+                .into_iter()
+                .chain(Into::<Self>::into("{ "))
+                .chain(Into::<Self>::into("!"))
+                .chain(Into::<Self>::into(*lhs))
+                .chain(Into::<Self>::into(" == "))
+                .chain(Into::<Self>::into(*result))
+                .chain(Into::<Self>::into(" }"))
+                .collect(),
+            Expr::Value(expr) => expr.into(),
             Expr::Application(expr) => expr.into(),
         }
     }
@@ -164,11 +211,46 @@ impl From<Expr> for Vec<u8> {
     fn from(expr: Expr) -> Self {
         match expr {
             Expr::Application(expr) => expr.into(),
-            expr => ExprApplication {
-                lhs: Box::new(Expr::Value(ExprValue::Path(ValuePath(vec![
-                    PathComponent::Ident("_".into()),
-                ])))),
-                application: Box::new(expr),
+            Expr::Unary(fancy) => Fancy {
+                code: fancy.code.clone(),
+                item: ExprApplication {
+                    lhs: Box::new(Expr::Value(Fancy {
+                        code: "".into(),
+                        item: ExprValue::Path(ValuePath(vec![PathComponent::Ident(Fancy {
+                            code: "".into(),
+                            item: "_".into(),
+                        })])),
+                    })),
+                    application: Box::new(Expr::Unary(fancy)),
+                },
+            }
+            .into(),
+            Expr::Binary(fancy) => Fancy {
+                code: fancy.code.clone(),
+                item: ExprApplication {
+                    lhs: Box::new(Expr::Value(Fancy {
+                        code: "".into(),
+                        item: ExprValue::Path(ValuePath(vec![PathComponent::Ident(Fancy {
+                            code: "".into(),
+                            item: "_".into(),
+                        })])),
+                    })),
+                    application: Box::new(Expr::Binary(fancy)),
+                },
+            }
+            .into(),
+            Expr::Value(fancy) => Fancy {
+                code: fancy.code.clone(),
+                item: ExprApplication {
+                    lhs: Box::new(Expr::Value(Fancy {
+                        code: "".into(),
+                        item: ExprValue::Path(ValuePath(vec![PathComponent::Ident(Fancy {
+                            code: "".into(),
+                            item: "_".into(),
+                        })])),
+                    })),
+                    application: Box::new(Expr::Value(fancy)),
+                },
             }
             .into(),
         }
@@ -339,6 +421,44 @@ mod tests {
                    |
                    = note: expected struct `1`
                               found struct `2`",
+        }
+    }
+
+    #[test]
+    fn translator_parses_and_retains_control_chars() {
+        translate! {
+            parse: "\
+                \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[32m   Compiling\u{1b}[0m verified v0.2.3 (/home/bob/verified/verified)
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;9merror[E0277]\u{1b}[0m\u{1b}[0m\u{1b}[1m: cannot subtract `typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>` from `Size`\u{1b}[0m
+                \u{1b}[0m  \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m--> \u{1b}[0m\u{1b}[0mverified/src/vec.rs:40:14\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m|\u{1b}[0m
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m40\u{1b}[0m\u{1b}[0m \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m        self.into()\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m             \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;9m^^^^\u{1b}[0m\u{1b}[0m \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;9mno implementation for `Size - typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>`\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m|\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m= \u{1b}[0m\u{1b}[0m\u{1b}[1mhelp\u{1b}[0m\u{1b}[0m: the trait `std::ops::Sub<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>>` is not implemented for `Size`\u{1b}[0m
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;14mhelp\u{1b}[0m\u{1b}[0m: consider further restricting this bound with `+ std::ops::Sub<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>>`\u{1b}[0m
+                \u{1b}[0m  \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m--> \u{1b}[0m\u{1b}[0mverified/src/vec.rs:28:12\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m|\u{1b}[0m
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m28\u{1b}[0m\u{1b}[0m \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0mimpl<Size: Unsigned, Element> Vec<Size, Element> {\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m           \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;14m^^^^^^^^\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m= \u{1b}[0m\u{1b}[0m\u{1b}[1mnote\u{1b}[0m\u{1b}[0m: required because of the requirements on the impl of `std::convert::From<vec::Vec<Size, Element>>` for `(vec::Vec<<Size as std::ops::Sub<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>>>::Output, Element>, Element)`\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m= \u{1b}[0m\u{1b}[0m\u{1b}[1mnote\u{1b}[0m\u{1b}[0m: required because of the requirements on the impl of `std::convert::Into<(vec::Vec<<Size as std::ops::Sub<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>>>::Output, Element>, Element)>` for `vec::Vec<Size, Element>`",
+            expect: "\
+                \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[32m   Compiling\u{1b}[0m verified v0.2.3 (/home/bob/verified/verified)
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;9merror[E0277]\u{1b}[0m\u{1b}[0m\u{1b}[1m: cannot subtract `1` from `Size`\u{1b}[0m
+                \u{1b}[0m  \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m--> \u{1b}[0m\u{1b}[0mverified/src/vec.rs:40:14\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m|\u{1b}[0m
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m40\u{1b}[0m\u{1b}[0m \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m        self.into()\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m             \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;9m^^^^\u{1b}[0m\u{1b}[0m \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;9mno implementation for `Size - 1`\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m|\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m= \u{1b}[0m\u{1b}[0m\u{1b}[1mhelp\u{1b}[0m\u{1b}[0m: the trait `{ _ - 1 }` is not implemented for `Size`\u{1b}[0m
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;14mhelp\u{1b}[0m\u{1b}[0m: consider further restricting this bound with `+ { _ - 1 }`\u{1b}[0m
+                \u{1b}[0m  \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m--> \u{1b}[0m\u{1b}[0mverified/src/vec.rs:28:12\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m|\u{1b}[0m
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m28\u{1b}[0m\u{1b}[0m \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0mimpl<Size: Unsigned, Element> Vec<Size, Element> {\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m           \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;14m^^^^^^^^\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m= \u{1b}[0m\u{1b}[0m\u{1b}[1mnote\u{1b}[0m\u{1b}[0m: required because of the requirements on the impl of `std::convert::From<vec::Vec<Size, Element>>` for `(vec::Vec<{ Size - 2 }, Element>, Element)`\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m= \u{1b}[0m\u{1b}[0m\u{1b}[1mnote\u{1b}[0m\u{1b}[0m: required because of the requirements on the impl of `std::convert::Into<(vec::Vec<{ Size - 2 }, Element>, Element)>` for `vec::Vec<Size, Element>`",
         }
     }
 }

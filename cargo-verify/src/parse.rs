@@ -3,21 +3,30 @@ use combine::error::ParseError;
 use combine::parser::byte::{alpha_num, byte, bytes, spaces};
 use combine::stream::position;
 use combine::stream::{Stream, StreamOnce};
-use combine::{any, attempt, between, choice, many1, optional, parser, sep_by, EasyParser, Parser};
+use combine::{
+    any, attempt, between, choice, many, many1, optional, parser, satisfy, sep_by, EasyParser,
+    Parser,
+};
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Fancy<Item> {
+    pub code: Vec<u8>,
+    pub item: Item,
+}
+
+impl<Item> From<Item> for Fancy<Item> {
+    fn from(item: Item) -> Self {
+        Self {
+            code: "".into(),
+            item,
+        }
+    }
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum ValueBit {
     B0,
     B1,
-}
-
-impl From<ValueBit> for usize {
-    fn from(bit: ValueBit) -> Self {
-        match bit {
-            ValueBit::B0 => 0,
-            ValueBit::B1 => 1,
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -37,7 +46,7 @@ pub enum GenericArg {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum PathComponent {
-    Ident(Vec<u8>),
+    Ident(Fancy<Vec<u8>>),
     Colon,
     Args(Vec<GenericArg>),
 }
@@ -72,16 +81,38 @@ pub struct ExprApplication {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Expr {
-    Value(ExprValue),
-    Unary(ExprUnary),
-    Binary(ExprBinary),
-    Application(ExprApplication),
+    Value(Fancy<ExprValue>),
+    Unary(Fancy<ExprUnary>),
+    Binary(Fancy<ExprBinary>),
+    Application(Fancy<ExprApplication>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Chunk {
     Parsed(Expr),
     Unparsed(u8),
+}
+
+fn fancy<'b, Input, Item>(
+    uncolored: impl Parser<Input, Output = Item> + 'b,
+) -> impl Parser<Input, Output = Fancy<Item>> + 'b
+where
+    <Input as StreamOnce>::Error: ParseError<
+        <Input as StreamOnce>::Token,
+        <Input as StreamOnce>::Range,
+        <Input as StreamOnce>::Position,
+    >,
+    Input: Stream + 'b,
+    Input: Stream<Token = u8, Range = &'b [u8]>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    (
+        many(satisfy(|t: u8| {
+            t.is_ascii_control() && !t.is_ascii_whitespace()
+        })),
+        uncolored,
+    )
+        .map(|(code, item)| Fancy { code, item })
 }
 
 fn parse_bit<'b, Input>() -> impl Parser<Input, Output = ValueBit> + 'b
@@ -161,7 +192,8 @@ where
     Input: Stream<Token = u8, Range = &'b [u8]>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let segment = || many1(choice((alpha_num(), byte(token!(_)[0])))).map(PathComponent::Ident);
+    let segment =
+        || fancy(many1(choice((alpha_num(), byte(token!(_)[0]))))).map(PathComponent::Ident);
     let colon2 = || bytes(token!(::)).map(|_| PathComponent::Colon);
     let args = || {
         between(
@@ -365,10 +397,10 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
-        attempt(application().map(Expr::Application)),
-        attempt(binary().map(Expr::Binary)),
-        attempt(unary().map(Expr::Unary)),
-        attempt(value().map(Expr::Value)),
+        attempt(fancy(application()).map(Expr::Application)),
+        attempt(fancy(binary()).map(Expr::Binary)),
+        attempt(fancy(unary()).map(Expr::Unary)),
+        attempt(fancy(value()).map(Expr::Value)),
     ))
 }
 
@@ -448,9 +480,12 @@ mod tests {
         assert_eq!(a, Unparsed('>' as u8));
         assert_eq!(
             b,
-            Parsed(Value(Path(ValuePath(vec![PathComponent::Ident(
-                "ty".into()
-            )]))))
+            Parsed(Value(
+                Path(ValuePath(vec![PathComponent::Ident(
+                    Into::<Vec<u8>>::into("ty").into()
+                )]))
+                .into()
+            ))
         );
         assert_eq!(c, None);
     }
@@ -459,7 +494,7 @@ mod tests {
     fn chunks_iter_yields_b0_when_next_in_stream() {
         assert_eq!(
             Chunks::new(ty!(B0)).next().unwrap().0,
-            Parsed(Value(Bit(B0)))
+            Parsed(Value(Bit(B0).into()))
         );
     }
 
@@ -467,7 +502,7 @@ mod tests {
     fn chunks_iter_yields_b1_when_next_in_stream() {
         assert_eq!(
             Chunks::new(ty!(B1)).next().unwrap().0,
-            Parsed(Value(Bit(B1)))
+            Parsed(Value(Bit(B1).into()))
         );
     }
 
@@ -475,7 +510,7 @@ mod tests {
     fn chunks_iter_yields_uterm_when_uterm_is_next_in_stream() {
         assert_eq!(
             Chunks::new(ty!(UTerm)).next().unwrap().0,
-            Parsed(Value(Unsigned(UTerm)))
+            Parsed(Value(Unsigned(UTerm).into()))
         );
     }
 
@@ -493,10 +528,13 @@ mod tests {
             .next()
             .unwrap()
             .0,
-            Parsed(Value(Unsigned(UInt {
-                msb: Box::new(UTerm),
-                lsb: B0,
-            })))
+            Parsed(Value(
+                Unsigned(UInt {
+                    msb: Box::new(UTerm),
+                    lsb: B0,
+                })
+                .into()
+            ))
         );
     }
 
@@ -514,10 +552,13 @@ mod tests {
             .next()
             .unwrap()
             .0,
-            Parsed(Value(Unsigned(UInt {
-                msb: Box::new(UTerm),
-                lsb: B1,
-            })))
+            Parsed(Value(
+                Unsigned(UInt {
+                    msb: Box::new(UTerm),
+                    lsb: B1,
+                })
+                .into()
+            ))
         );
     }
 
@@ -540,13 +581,16 @@ mod tests {
             .next()
             .unwrap()
             .0,
-            Parsed(Value(Unsigned(UInt {
-                msb: Box::new(UInt {
-                    msb: Box::new(UTerm),
-                    lsb: B1,
-                }),
-                lsb: B0,
-            })))
+            Parsed(Value(
+                Unsigned(UInt {
+                    msb: Box::new(UInt {
+                        msb: Box::new(UTerm),
+                        lsb: B1,
+                    }),
+                    lsb: B0,
+                })
+                .into()
+            ))
         );
     }
 
@@ -554,7 +598,7 @@ mod tests {
     fn chunks_iter_yields_unary_expr_when_next_in_stream() {
         assert_eq!(
             Chunks::new(op!(!)).next().unwrap().0,
-            Parsed(Unary(Not { result: None }))
+            Parsed(Unary(Not { result: None }.into()))
         );
     }
 
@@ -572,9 +616,12 @@ mod tests {
             .next()
             .unwrap()
             .0,
-            Parsed(Unary(Not {
-                result: Some(Box::new(Value(Bit(B1)))),
-            }))
+            Parsed(Unary(
+                Not {
+                    result: Some(Box::new(Value(Bit(B1).into()))),
+                }
+                .into()
+            ))
         );
     }
 
@@ -595,14 +642,20 @@ mod tests {
             .next()
             .unwrap()
             .0,
-            Parsed(Binary(ExprBinary {
-                op: "+".into(),
-                expr: Box::new(Value(Unsigned(UInt {
-                    msb: Box::new(UTerm),
-                    lsb: B1,
-                }))),
-                result: None,
-            }))
+            Parsed(Binary(
+                ExprBinary {
+                    op: "+".into(),
+                    expr: Box::new(Value(
+                        Unsigned(UInt {
+                            msb: Box::new(UTerm),
+                            lsb: B1,
+                        })
+                        .into()
+                    )),
+                    result: None,
+                }
+                .into()
+            ))
         );
     }
 
@@ -627,12 +680,12 @@ mod tests {
                 expr: Box::new(Value(Unsigned(UInt {
                     msb: Box::new(UTerm),
                     lsb: B1,
-                }))),
+                }).into())),
                 result: Some(Box::new(Value(Unsigned(UInt {
                     msb: Box::new(UTerm),
                     lsb: B1,
-                })))),
-            }))
+                }).into()))),
+            }.into()))
         );
     }
 
@@ -640,7 +693,7 @@ mod tests {
     fn chunks_iter_translates_many_binary_ops() {
         fn parse_binary_expr_and_get_op(input: &[u8]) -> String {
             match Chunks::new(input).next().unwrap().0 {
-                Parsed(Binary(expr)) => std::str::from_utf8(&expr.op).unwrap().to_string(),
+                Parsed(Binary(expr)) => std::str::from_utf8(&expr.item.op).unwrap().to_string(),
                 _ => panic!(),
             }
         }
@@ -739,20 +792,20 @@ mod tests {
                 expr: Box::new(Value(Unsigned(UInt {
                     msb: Box::new(UTerm),
                     lsb: B1,
-                }))),
+                }).into())),
                 result: Some(Box::new(Value(Path(ValuePath(vec![
-                    PathComponent::Ident("mod".into()),
+                    PathComponent::Ident(Into::<Vec<u8>>::into("mod").into()),
                     PathComponent::Colon,
-                    PathComponent::Ident("Type".into()),
+                    PathComponent::Ident(Into::<Vec<u8>>::into("Type").into()),
                     PathComponent::Args(vec![
-                        GenericArg::Expr(Value(Unsigned(UTerm))),
+                        GenericArg::Expr(Value(Unsigned(UTerm).into())),
                         GenericArg::AssociatedType(
-                            PathComponent::Ident("AssociatedType".into()),
-                            Value(Bit(B1))
+                            PathComponent::Ident(Into::<Vec<u8>>::into("AssociatedType").into()),
+                            Value(Bit(B1).into())
                         ),
                     ])
-                ]))))),
-            }))
+                ])).into()))),
+            }.into()))
         );
     }
 
@@ -774,16 +827,18 @@ mod tests {
             .0,
             Parsed(
                 Application(ExprApplication {
-                    lhs: Box::new(Value(Path(ValuePath(vec![PathComponent::Ident("Self".into())])))),
+                    lhs: Box::new(Value(Path(ValuePath(vec![
+                        PathComponent::Ident(Into::<Vec<u8>>::into("Self").into())
+                    ])).into())),
                     application: Box::new(Binary(ExprBinary {
                         op: "+".into(),
                         expr: Box::new(Value(Unsigned(UInt {
                             msb: Box::new(UTerm),
                             lsb: B1,
-                        }))),
+                        }).into())),
                         result: None,
-                    }))
-                })
+                    }.into()))
+                }.into())
             )
         );
     }
@@ -808,16 +863,18 @@ mod tests {
             .0,
             Parsed(
                 Application(ExprApplication {
-                    lhs: Box::new(Value(Path(ValuePath(vec![PathComponent::Ident("Self".into())])))),
+                    lhs: Box::new(Value(Path(ValuePath(vec![PathComponent::Ident(
+                        Into::<Vec<u8>>::into("Self").into())
+                    ])).into())),
                     application: Box::new(Binary(ExprBinary {
                         op: "+".into(),
                         expr: Box::new(Value(Unsigned(UInt {
                             msb: Box::new(UTerm),
                             lsb: B1,
-                        }))),
+                        }).into())),
                         result: None,
-                    }))
-                })
+                    }.into()))
+                }.into())
             )
         );
     }
