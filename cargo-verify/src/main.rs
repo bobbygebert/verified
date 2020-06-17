@@ -1,6 +1,6 @@
 use std::env;
 use std::io;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::vec;
 
 mod parse;
@@ -115,6 +115,11 @@ fn main() {
     if !args.contains(&"--color".to_string()) {
         args.extend(vec!["--color", "always"].into_iter().map(|a| a.to_string()));
     }
-    let output = Command::new("cargo").args(args).output().unwrap().stderr;
+    let cmd = Command::new("cargo")
+        .args(args)
+        .stdout(Stdio::inherit())
+        .output()
+        .unwrap();
+    let output = cmd.stderr;
     Translator::new(io::stderr()).translate(output);
 }
