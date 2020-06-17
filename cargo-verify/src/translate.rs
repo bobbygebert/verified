@@ -278,4 +278,67 @@ mod tests {
             expect: "{ Self + 1 }",
         }
     }
+
+    #[test]
+    fn translator_replaces_missing_implementation() {
+        translate! {
+        parse: "\
+                error[E0277]: cannot subtract `typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>` from `Size`
+                  --> verified/src/vec.rs:40:14
+                   |
+                40 |         self.into()
+                   |              ^^^^ no implementation for `Size - typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>`
+                   |
+                   = help: the trait `std::ops::Sub<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>>` is not implemented for `Size`
+                help: consider further restricting this bound with `+ std::ops::Sub<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>>`
+                  --> verified/src/vec.rs:28:12
+                   |
+                28 | impl<Size: Unsigned, Element> Vec<Size, Element> {
+                   |            ^^^^^^^^
+                   = note: required because of the requirements on the impl of `std::convert::From<vec::Vec<Size, Element>>` for `(vec::Vec<<Size as std::ops::Sub<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>>>::Output, Element>, Element)`
+                   = note: required because of the requirements on the impl of `std::convert::Into<(vec::Vec<<Size as std::ops::Sub<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>>>::Output, Element>, Element)>` for `vec::Vec<Size, Element>`",
+
+        expect: "\
+                error[E0277]: cannot subtract `1` from `Size`
+                  --> verified/src/vec.rs:40:14
+                   |
+                40 |         self.into()
+                   |              ^^^^ no implementation for `Size - 1`
+                   |
+                   = help: the trait `{ _ - 1 }` is not implemented for `Size`
+                help: consider further restricting this bound with `+ { _ - 1 }`
+                  --> verified/src/vec.rs:28:12
+                   |
+                28 | impl<Size: Unsigned, Element> Vec<Size, Element> {
+                   |            ^^^^^^^^
+                   = note: required because of the requirements on the impl of `std::convert::From<vec::Vec<Size, Element>>` for `(vec::Vec<{ Size - 2 }, Element>, Element)`
+                   = note: required because of the requirements on the impl of `std::convert::Into<(vec::Vec<{ Size - 2 }, Element>, Element)>` for `vec::Vec<Size, Element>`",
+        }
+    }
+
+    #[test]
+    fn translator_replaces_unsigned_type_expectation() {
+        translate! {
+            parse: "\
+                error[E0308]: mismatched types
+                  --> verified/src/vec.rs:59:18
+                   |
+                59 |         (Vec(s - U2::new(), v), e)
+                   |                  ^^^^^^^^^ expected struct `typenum::uint::UTerm`, found struct `typenum::uint::UInt`
+                   |
+                   = note: expected struct `typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>`
+                              found struct `typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>`",
+
+
+            expect: "\
+                error[E0308]: mismatched types
+                  --> verified/src/vec.rs:59:18
+                   |
+                59 |         (Vec(s - U2::new(), v), e)
+                   |                  ^^^^^^^^^ expected struct `0`, found struct `typenum::uint::UInt`
+                   |
+                   = note: expected struct `1`
+                              found struct `2`",
+        }
+    }
 }

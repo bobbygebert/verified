@@ -112,6 +112,7 @@ macro_rules! op {
 
 fn main() {
     let mut args: Vec<String> = env::args().skip(2).collect();
+    // TODO: handle coloring in types.
     if !args.contains(&"--color".to_string()) {
         args.extend(vec!["--color", "always"].into_iter().map(|a| a.to_string()));
     }
