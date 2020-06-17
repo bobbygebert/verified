@@ -211,8 +211,8 @@ impl From<Expr> for Vec<u8> {
     fn from(expr: Expr) -> Self {
         match expr {
             Expr::Application(expr) => expr.into(),
-            Expr::Unary(fancy) => Fancy {
-                code: fancy.code.clone(),
+            Expr::Unary(Fancy { code, item }) => Fancy {
+                code,
                 item: ExprApplication {
                     lhs: Box::new(Expr::Value(Fancy {
                         code: "".into(),
@@ -221,12 +221,15 @@ impl From<Expr> for Vec<u8> {
                             item: "_".into(),
                         })])),
                     })),
-                    application: Box::new(Expr::Unary(fancy)),
+                    application: Box::new(Expr::Unary(Fancy {
+                        item,
+                        code: "".into(),
+                    })),
                 },
             }
             .into(),
-            Expr::Binary(fancy) => Fancy {
-                code: fancy.code.clone(),
+            Expr::Binary(Fancy { code, item }) => Fancy {
+                code,
                 item: ExprApplication {
                     lhs: Box::new(Expr::Value(Fancy {
                         code: "".into(),
@@ -235,12 +238,15 @@ impl From<Expr> for Vec<u8> {
                             item: "_".into(),
                         })])),
                     })),
-                    application: Box::new(Expr::Binary(fancy)),
+                    application: Box::new(Expr::Binary(Fancy {
+                        item,
+                        code: "".into(),
+                    })),
                 },
             }
             .into(),
-            Expr::Value(fancy) => Fancy {
-                code: fancy.code.clone(),
+            Expr::Value(Fancy { code, item }) => Fancy {
+                code,
                 item: ExprApplication {
                     lhs: Box::new(Expr::Value(Fancy {
                         code: "".into(),
@@ -249,7 +255,10 @@ impl From<Expr> for Vec<u8> {
                             item: "_".into(),
                         })])),
                     })),
-                    application: Box::new(Expr::Value(fancy)),
+                    application: Box::new(Expr::Value(Fancy {
+                        item,
+                        code: "".into(),
+                    })),
                 },
             }
             .into(),
@@ -271,7 +280,12 @@ mod tests {
             translator.translate(input.as_bytes());
 
             let expected = dedent($expected);
-            assert_eq!(std::str::from_utf8(&output).unwrap(), expected);
+            let output = std::str::from_utf8(&output).unwrap();
+            assert_eq!(
+                output, expected,
+                "\nactual: {}\nexpected: {}",
+                output, expected
+            );
         };
     }
 
@@ -459,6 +473,28 @@ mod tests {
                 \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m           \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;14m^^^^^^^^\u{1b}[0m
                 \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m= \u{1b}[0m\u{1b}[0m\u{1b}[1mnote\u{1b}[0m\u{1b}[0m: required because of the requirements on the impl of `std::convert::From<vec::Vec<Size, Element>>` for `(vec::Vec<{ Size - 2 }, Element>, Element)`\u{1b}[0m
                 \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m= \u{1b}[0m\u{1b}[0m\u{1b}[1mnote\u{1b}[0m\u{1b}[0m: required because of the requirements on the impl of `std::convert::Into<(vec::Vec<{ Size - 2 }, Element>, Element)>` for `vec::Vec<Size, Element>`",
+        }
+        translate! {
+            parse: "\
+                \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[32m   Compiling\u{1b}[0m verified v0.2.3 (/home/bob/verified/verified)
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;9merror[E0308]\u{1b}[0m\u{1b}[0m\u{1b}[1m: mismatched types\u{1b}[0m
+                \u{1b}[0m  \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m--> \u{1b}[0m\u{1b}[0mverified/src/vec.rs:59:18\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m|\u{1b}[0m
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m59\u{1b}[0m\u{1b}[0m \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m        (Vec(s - U2::new(), v), e)\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m                 \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;9m^^^^^^^^^\u{1b}[0m\u{1b}[0m \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;9mexpected struct `typenum::uint::UTerm`, found struct `typenum::uint::UInt`\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m|\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m= \u{1b}[0m\u{1b}[0m\u{1b}[1mnote\u{1b}[0m\u{1b}[0m: expected struct `typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::\u{1b}[0m\u{1b}[0m\u{1b}[1mB1\u{1b}[0m\u{1b}[0m>`\u{1b}[0m
+                \u{1b}[0m              found struct `typenum::uint::UInt<\u{1b}[0m\u{1b}[0m\u{1b}[1mtypenum::uint::UInt<\u{1b}[0m\u{1b}[0mtypenum::uint::UTerm, \u{1b}[0m\u{1b}[0m\u{1b}[1mtypenum::bit::B1>\u{1b}[0m\u{1b}[0m, typenum::bit::\u{1b}[0m\u{1b}[0m\u{1b}[1mB0\u{1b}[0m\u{1b}[0m>`",
+            expect: "\
+                \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[32m   Compiling\u{1b}[0m verified v0.2.3 (/home/bob/verified/verified)
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;9merror[E0308]\u{1b}[0m\u{1b}[0m\u{1b}[1m: mismatched types\u{1b}[0m
+                \u{1b}[0m  \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m--> \u{1b}[0m\u{1b}[0mverified/src/vec.rs:59:18\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m|\u{1b}[0m
+                \u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m59\u{1b}[0m\u{1b}[0m \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m        (Vec(s - U2::new(), v), e)\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m| \u{1b}[0m\u{1b}[0m                 \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;9m^^^^^^^^^\u{1b}[0m\u{1b}[0m \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;9mexpected struct `0`, found struct `typenum::uint::UInt`\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m|\u{1b}[0m
+                \u{1b}[0m   \u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[38;5;12m= \u{1b}[0m\u{1b}[0m\u{1b}[1mnote\u{1b}[0m\u{1b}[0m: expected struct `1`\u{1b}[0m
+                \u{1b}[0m              found struct `2`",
         }
     }
 }

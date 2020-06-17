@@ -1,6 +1,7 @@
 use crate::{op, token, ty};
 use combine::error::ParseError;
 use combine::parser::byte::{alpha_num, byte, bytes, spaces};
+use combine::parser::repeat::iterate;
 use combine::stream::position;
 use combine::stream::{Stream, StreamOnce};
 use combine::{
@@ -106,13 +107,36 @@ where
     Input: Stream<Token = u8, Range = &'b [u8]>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
+    let mut prev = '.';
     (
-        many(satisfy(|t: u8| {
-            t.is_ascii_control() && !t.is_ascii_whitespace()
+        many(satisfy(move |t: u8| {
+            let t = t as char;
+            let res = (t.is_ascii_control() && !t.is_ascii_whitespace())
+                || t == '['
+                || (t == 'm' && (prev == '[' || prev.is_ascii_digit()))
+                || t == ';'
+                || t.is_ascii_digit();
+            prev = t;
+            res
         })),
         uncolored,
     )
         .map(|(code, item)| Fancy { code, item })
+}
+
+parser! {
+    fn fancy_ty['b, Input](ty: &'static [u8])(Input) -> Vec<Fancy<&'b [u8]>>
+    where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
+    {
+        iterate(
+            ty
+                .split(|b| *b == ':' as u8)
+                .filter(|segment| segment != b"")
+                .map(|segment: &[u8]| vec![&b"::"[..], segment])
+                .flatten()
+                .skip(1),
+            |p, _| fancy(bytes(p)))
+    }
 }
 
 fn parse_bit<'b, Input>() -> impl Parser<Input, Output = ValueBit> + 'b
@@ -127,8 +151,8 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
-        attempt(bytes(ty!(B0)).map(|_| ValueBit::B0)),
-        bytes(ty!(B1)).map(|_| ValueBit::B1),
+        attempt(fancy_ty(ty!(B0)).map(|_| ValueBit::B0)),
+        fancy_ty(ty!(B1)).map(|_| ValueBit::B1),
     ))
 }
 
@@ -151,15 +175,15 @@ where
     Input: Stream<Token = u8, Range = &'b [u8]>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let uterm = || bytes(ty!(UTerm)).map(|_| ValueUnsigned::UTerm);
-    let uint = || bytes(ty!(UInt));
+    let uterm = || fancy_ty(ty!(UTerm)).map(|_| ValueUnsigned::UTerm);
+    let uint = || fancy_ty(ty!(UInt));
     let generics = || {
         between(
-            bytes(token!(<)),
-            bytes(token!(>)),
+            fancy(bytes(token!(<))),
+            fancy(bytes(token!(>))),
             (
                 unsigned(),
-                (spaces(), bytes(token!(,)), spaces()),
+                (fancy(spaces()), fancy(bytes(token!(,))), fancy(spaces())),
                 attempt(bit()),
             ),
         )
@@ -197,8 +221,8 @@ where
     let colon2 = || bytes(token!(::)).map(|_| PathComponent::Colon);
     let args = || {
         between(
-            bytes(token!(<)),
-            bytes(token!(>)),
+            fancy(bytes(token!(<))),
+            fancy(bytes(token!(>))),
             sep_by(
                 choice((
                     attempt(
@@ -263,8 +287,8 @@ where
     let not = || bytes(op!(!));
     let generics = || {
         optional(between(
-            bytes(token!(<)),
-            bytes(token!(>)),
+            fancy(bytes(token!(<))),
+            fancy(bytes(token!(>))),
             (
                 bytes(token!(Output)),
                 spaces(),
@@ -321,17 +345,17 @@ where
 
     let generics = || {
         between(
-            bytes(token!(<)),
-            bytes(token!(>)),
+            fancy(bytes(token!(<))),
+            fancy(bytes(token!(>))),
             (
                 expr(),
                 optional((
-                    bytes(token!(,)),
-                    spaces(),
-                    bytes(token!(Output)),
-                    spaces(),
-                    bytes(token!(=)),
-                    spaces(),
+                    fancy(bytes(token!(,))),
+                    fancy(spaces()),
+                    fancy(bytes(token!(Output))),
+                    fancy(spaces()),
+                    fancy(bytes(token!(=))),
+                    fancy(spaces()),
                     expr(),
                 )),
             ),
@@ -365,11 +389,11 @@ where
 {
     (
         between(
-            bytes(token!(<)),
-            bytes(token!(>)),
+            fancy(bytes(token!(<))),
+            fancy(bytes(token!(>))),
             (expr(), bytes(b" as "), expr()),
         ),
-        optional((bytes(token!(::)), bytes(token!(Output)))),
+        optional((fancy(bytes(token!(::))), fancy(bytes(token!(Output))))),
     )
         .map(|((lhs, _, application), _)| ExprApplication {
             lhs: Box::new(lhs),
@@ -530,8 +554,8 @@ mod tests {
             .0,
             Parsed(Value(
                 Unsigned(UInt {
-                    msb: Box::new(UTerm),
-                    lsb: B0,
+                    msb: Box::new(UTerm.into()),
+                    lsb: B0.into(),
                 })
                 .into()
             ))
@@ -554,8 +578,8 @@ mod tests {
             .0,
             Parsed(Value(
                 Unsigned(UInt {
-                    msb: Box::new(UTerm),
-                    lsb: B1,
+                    msb: Box::new(UTerm.into()),
+                    lsb: B1.into(),
                 })
                 .into()
             ))
@@ -583,11 +607,14 @@ mod tests {
             .0,
             Parsed(Value(
                 Unsigned(UInt {
-                    msb: Box::new(UInt {
-                        msb: Box::new(UTerm),
-                        lsb: B1,
-                    }),
-                    lsb: B0,
+                    msb: Box::new(
+                        UInt {
+                            msb: Box::new(UTerm.into()),
+                            lsb: B1.into(),
+                        }
+                        .into()
+                    ),
+                    lsb: B0.into(),
                 })
                 .into()
             ))
@@ -647,8 +674,8 @@ mod tests {
                     op: "+".into(),
                     expr: Box::new(Value(
                         Unsigned(UInt {
-                            msb: Box::new(UTerm),
-                            lsb: B1,
+                            msb: Box::new(UTerm.into()),
+                            lsb: B1.into(),
                         })
                         .into()
                     )),
@@ -678,12 +705,12 @@ mod tests {
             Parsed(Binary(ExprBinary {
                 op: "+".into(),
                 expr: Box::new(Value(Unsigned(UInt {
-                    msb: Box::new(UTerm),
-                    lsb: B1,
+                    msb: Box::new(UTerm.into()),
+                    lsb: B1.into(),
                 }).into())),
                 result: Some(Box::new(Value(Unsigned(UInt {
-                    msb: Box::new(UTerm),
-                    lsb: B1,
+                    msb: Box::new(UTerm.into()),
+                    lsb: B1.into(),
                 }).into()))),
             }.into()))
         );
@@ -790,8 +817,8 @@ mod tests {
             Parsed(Binary(ExprBinary {
                 op: "+".into(),
                 expr: Box::new(Value(Unsigned(UInt {
-                    msb: Box::new(UTerm),
-                    lsb: B1,
+                    msb: Box::new(UTerm.into()),
+                    lsb: B1.into(),
                 }).into())),
                 result: Some(Box::new(Value(Path(ValuePath(vec![
                     PathComponent::Ident(Into::<Vec<u8>>::into("mod").into()),
@@ -833,8 +860,8 @@ mod tests {
                     application: Box::new(Binary(ExprBinary {
                         op: "+".into(),
                         expr: Box::new(Value(Unsigned(UInt {
-                            msb: Box::new(UTerm),
-                            lsb: B1,
+                            msb: Box::new(UTerm.into()),
+                            lsb: B1.into(),
                         }).into())),
                         result: None,
                     }.into()))
@@ -869,8 +896,8 @@ mod tests {
                     application: Box::new(Binary(ExprBinary {
                         op: "+".into(),
                         expr: Box::new(Value(Unsigned(UInt {
-                            msb: Box::new(UTerm),
-                            lsb: B1,
+                            msb: Box::new(UTerm.into()),
+                            lsb: B1.into(),
                         }).into())),
                         result: None,
                     }.into()))
