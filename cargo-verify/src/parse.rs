@@ -1,3 +1,4 @@
+use crate::{op, token, ty};
 use combine::error::ParseError;
 use combine::parser::byte::{alpha_num, byte, bytes, spaces};
 use combine::stream::position;
@@ -95,8 +96,8 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     choice((
-        attempt(bytes(b"typenum::bit::B0").map(|_| ValueBit::B0)),
-        bytes(b"typenum::bit::B1").map(|_| ValueBit::B1),
+        attempt(bytes(ty!(B0)).map(|_| ValueBit::B0)),
+        bytes(ty!(B1)).map(|_| ValueBit::B1),
     ))
 }
 
@@ -119,15 +120,15 @@ where
     Input: Stream<Token = u8, Range = &'b [u8]>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let uterm = || bytes(b"typenum::uint::UTerm").map(|_| ValueUnsigned::UTerm);
-    let uint = || bytes(b"typenum::uint::UInt");
+    let uterm = || bytes(ty!(UTerm)).map(|_| ValueUnsigned::UTerm);
+    let uint = || bytes(ty!(UInt));
     let generics = || {
         between(
-            byte('<' as u8),
-            byte('>' as u8),
+            bytes(token!(<)),
+            bytes(token!(>)),
             (
                 unsigned(),
-                (spaces(), byte(',' as u8), spaces()),
+                (spaces(), bytes(token!(,)), spaces()),
                 attempt(bit()),
             ),
         )
@@ -160,21 +161,21 @@ where
     Input: Stream<Token = u8, Range = &'b [u8]>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let segment = || many1(choice((alpha_num(), byte('_' as u8)))).map(PathComponent::Ident);
-    let colon2 = || bytes(b"::").map(|_| PathComponent::Colon);
+    let segment = || many1(choice((alpha_num(), byte(token!(_)[0])))).map(PathComponent::Ident);
+    let colon2 = || bytes(token!(::)).map(|_| PathComponent::Colon);
     let args = || {
         between(
-            byte('<' as u8),
-            byte('>' as u8),
+            bytes(token!(<)),
+            bytes(token!(>)),
             sep_by(
                 choice((
                     attempt(
-                        (segment(), bytes(b" = "), expr())
-                            .map(|(l, _, r)| GenericArg::AssociatedType(l, r)),
+                        (segment(), spaces(), bytes(token!(=)), spaces(), expr())
+                            .map(|(l, _, _, _, r)| GenericArg::AssociatedType(l, r)),
                     ),
                     expr().map(GenericArg::Expr),
                 )),
-                (spaces(), byte(',' as u8), spaces()),
+                (spaces(), bytes(token!(,)), spaces()),
             ),
         )
         .map(PathComponent::Args)
@@ -227,16 +228,22 @@ where
     Input: Stream<Token = u8, Range = &'b [u8]>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let not = || bytes(b"std::ops::Not");
+    let not = || bytes(op!(!));
     let generics = || {
         optional(between(
-            byte('<' as u8),
-            byte('>' as u8),
-            (bytes(b"Output = "), expr()),
+            bytes(token!(<)),
+            bytes(token!(>)),
+            (
+                bytes(token!(Output)),
+                spaces(),
+                bytes(token!(=)),
+                spaces(),
+                expr(),
+            ),
         ))
     };
     (not(), generics()).map(|(_op, generics)| ExprUnary::Not {
-        result: generics.map(|(_output_is, result)| Box::new(result)),
+        result: generics.map(|(_, _, _, _, result)| Box::new(result)),
     })
 }
 
@@ -259,55 +266,49 @@ where
     Input: Stream<Token = u8, Range = &'b [u8]>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let add = || bytes(b"std::ops::Add").map(|_| "+".into());
-    let and = || bytes(b"std::ops::BitAnd").map(|_| "&".into());
-    let or = || bytes(b"std::ops::BitOr").map(|_| "|".into());
-    let xor = || bytes(b"std::ops::BitXor").map(|_| "^".into());
-    let div = || bytes(b"std::ops::Div").map(|_| "/".into());
-    let eq = || bytes(b"typenum::type_operators::IsEqual").map(|_| "==".into());
-    let ge = || bytes(b"typenum::type_operators::IsGreaterOrEqual").map(|_| ">=".into());
-    let gt = || bytes(b"typenum::type_operators::IsGreater").map(|_| ">".into());
-    let le = || bytes(b"typenum::type_operators::IsLessOrEqual").map(|_| "<=".into());
-    let lt = || bytes(b"typenum::type_operators::IsLess").map(|_| "<".into());
-    let mul = || bytes(b"std::ops::Mul").map(|_| "*".into());
-    let rem = || bytes(b"std::ops::Rem").map(|_| "%".into());
-    let ne = || bytes(b"typenum::type_operators::IsNotEqual").map(|_| "!=".into());
-    let shl = || bytes(b"std::ops::Shl").map(|_| "<<".into());
-    let shr = || bytes(b"std::ops::Shr").map(|_| ">>".into());
-    let sub = || bytes(b"std::ops::Sub").map(|_| "-".into());
-
     let op = || {
         choice((
-            attempt(add()),
-            attempt(and()),
-            attempt(or()),
-            attempt(xor()),
-            attempt(div()),
-            attempt(eq()),
-            attempt(ge()),
-            attempt(gt()),
-            attempt(le()),
-            attempt(lt()),
-            attempt(mul()),
-            attempt(rem()),
-            attempt(ne()),
-            attempt(shl()),
-            attempt(shr()),
-            attempt(sub()),
+            attempt(bytes(op!(+)).map(|_| "+".into())),
+            attempt(bytes(op!(&)).map(|_| "&".into())),
+            attempt(bytes(op!(|)).map(|_| "|".into())),
+            attempt(bytes(op!(^)).map(|_| "^".into())),
+            attempt(bytes(op!(/)).map(|_| "/".into())),
+            attempt(bytes(op!(==)).map(|_| "==".into())),
+            attempt(bytes(op!(>=)).map(|_| ">=".into())),
+            attempt(bytes(op!(>)).map(|_| ">".into())),
+            attempt(bytes(op!(<=)).map(|_| "<=".into())),
+            attempt(bytes(op!(<)).map(|_| "<".into())),
+            attempt(bytes(op!(*)).map(|_| "*".into())),
+            attempt(bytes(op!(%)).map(|_| "%".into())),
+            attempt(bytes(op!(!=)).map(|_| "!=".into())),
+            attempt(bytes(op!(<<)).map(|_| "<<".into())),
+            attempt(bytes(op!(>>)).map(|_| ">>".into())),
+            attempt(bytes(op!(-)).map(|_| "-".into())),
         ))
     };
 
     let generics = || {
         between(
-            byte('<' as u8),
-            byte('>' as u8),
-            (expr(), optional(bytes(b", Output = ")), optional(expr())),
+            bytes(token!(<)),
+            bytes(token!(>)),
+            (
+                expr(),
+                optional((
+                    bytes(token!(,)),
+                    spaces(),
+                    bytes(token!(Output)),
+                    spaces(),
+                    bytes(token!(=)),
+                    spaces(),
+                    expr(),
+                )),
+            ),
         )
     };
-    (op(), generics()).map(|(op, (expr, _comma_output_is, result))| ExprBinary {
+    (op(), generics()).map(|(op, (expr, result))| ExprBinary {
         op,
         expr: Box::new(expr),
-        result: result.map(|expr| Box::new(expr)),
+        result: result.map(|(_, _, _, _, _, _, expr)| Box::new(expr)),
     })
 }
 
@@ -332,11 +333,11 @@ where
 {
     (
         between(
-            byte('<' as u8),
-            byte('>' as u8),
+            bytes(token!(<)),
+            bytes(token!(>)),
             (expr(), bytes(b" as "), expr()),
         ),
-        optional((bytes(b"::"), bytes(b"Output"))),
+        optional((bytes(token!(::)), bytes(token!(Output)))),
     )
         .map(|((lhs, _, application), _)| ExprApplication {
             lhs: Box::new(lhs),
@@ -424,9 +425,18 @@ mod tests {
     use ValueBit::*;
     use ValueUnsigned::*;
 
+    macro_rules! tokens {
+        ($($t:tt)*) => {{
+            vec![$($t)*].into_iter().flatten().map(|b| *b).collect::<Vec<_>>().as_ref()
+        }}
+    }
+
     #[test]
     fn chunks_iter_yields_next_char_when_unsigned_cannot_be_parsed() {
-        assert_eq!(Chunks::new(b">").next().unwrap().0, Unparsed('>' as u8));
+        assert_eq!(
+            Chunks::new(token!(>)).next().unwrap().0,
+            Unparsed('>' as u8)
+        );
     }
 
     #[test]
@@ -448,7 +458,7 @@ mod tests {
     #[test]
     fn chunks_iter_yields_b0_when_next_in_stream() {
         assert_eq!(
-            Chunks::new(b"typenum::bit::B0").next().unwrap().0,
+            Chunks::new(ty!(B0)).next().unwrap().0,
             Parsed(Value(Bit(B0)))
         );
     }
@@ -456,7 +466,7 @@ mod tests {
     #[test]
     fn chunks_iter_yields_b1_when_next_in_stream() {
         assert_eq!(
-            Chunks::new(b"typenum::bit::B1").next().unwrap().0,
+            Chunks::new(ty!(B1)).next().unwrap().0,
             Parsed(Value(Bit(B1)))
         );
     }
@@ -464,7 +474,7 @@ mod tests {
     #[test]
     fn chunks_iter_yields_uterm_when_uterm_is_next_in_stream() {
         assert_eq!(
-            Chunks::new(b"typenum::uint::UTerm").next().unwrap().0,
+            Chunks::new(ty!(UTerm)).next().unwrap().0,
             Parsed(Value(Unsigned(UTerm)))
         );
     }
@@ -472,10 +482,17 @@ mod tests {
     #[test]
     fn chunks_iter_yields_u0_when_u0_is_next_in_stream() {
         assert_eq!(
-            Chunks::new(b"typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B0>")
-                .next()
-                .unwrap()
-                .0,
+            Chunks::new(tokens![
+                ty!(UInt),
+                token!(<),
+                ty!(UTerm),
+                token!(,),
+                ty!(B0),
+                token!(>)
+            ])
+            .next()
+            .unwrap()
+            .0,
             Parsed(Value(Unsigned(UInt {
                 msb: Box::new(UTerm),
                 lsb: B0,
@@ -486,10 +503,17 @@ mod tests {
     #[test]
     fn chunks_iter_yields_u1_when_u1_is_next_in_stream() {
         assert_eq!(
-            Chunks::new(b"typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>")
-                .next()
-                .unwrap()
-                .0,
+            Chunks::new(tokens![
+                ty!(UInt),
+                token!(<),
+                ty!(UTerm),
+                token!(,),
+                ty!(B1),
+                token!(>)
+            ])
+            .next()
+            .unwrap()
+            .0,
             Parsed(Value(Unsigned(UInt {
                 msb: Box::new(UTerm),
                 lsb: B1,
@@ -500,10 +524,22 @@ mod tests {
     #[test]
     fn chunks_iter_yields_u2_when_u2_is_next_in_stream() {
         assert_eq!(
-            Chunks::new(b"typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>")
-                .next()
-                .unwrap()
-                .0,
+            Chunks::new(tokens![
+                ty!(UInt),
+                token!(<),
+                ty!(UInt),
+                token!(<),
+                ty!(UTerm),
+                token!(,),
+                ty!(B1),
+                token!(>),
+                token!(,),
+                ty!(B0),
+                token!(>)
+            ])
+            .next()
+            .unwrap()
+            .0,
             Parsed(Value(Unsigned(UInt {
                 msb: Box::new(UInt {
                     msb: Box::new(UTerm),
@@ -517,7 +553,7 @@ mod tests {
     #[test]
     fn chunks_iter_yields_unary_expr_when_next_in_stream() {
         assert_eq!(
-            Chunks::new(b"std::ops::Not").next().unwrap().0,
+            Chunks::new(op!(!)).next().unwrap().0,
             Parsed(Unary(Not { result: None }))
         );
     }
@@ -525,10 +561,17 @@ mod tests {
     #[test]
     fn chunks_iter_yields_unary_expr_with_equals_when_next_in_stream() {
         assert_eq!(
-            Chunks::new(b"std::ops::Not<Output = typenum::bit::B1>")
-                .next()
-                .unwrap()
-                .0,
+            Chunks::new(tokens![
+                op!(!),
+                token!(<),
+                token!(Output),
+                token!(=),
+                ty!(B1),
+                token!(>)
+            ])
+            .next()
+            .unwrap()
+            .0,
             Parsed(Unary(Not {
                 result: Some(Box::new(Value(Bit(B1)))),
             }))
@@ -538,9 +581,17 @@ mod tests {
     #[test]
     fn chunks_iter_yields_binary_expr_when_next_in_stream() {
         assert_eq!(
-            Chunks::new(
-                b"std::ops::Add<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>>"
-            )
+            Chunks::new(tokens![
+                op!(+),
+                token!(<),
+                ty!(UInt),
+                token!(<),
+                ty!(UTerm),
+                token!(,),
+                ty!(B1),
+                token!(>),
+                token!(>),
+            ])
             .next()
             .unwrap()
             .0,
@@ -557,11 +608,20 @@ mod tests {
 
     #[test]
     fn chunks_iter_yields_binary_expr_with_equals_when_next_in_stream() {
+        #[rustfmt::skip]
         assert_eq!(
-            Chunks::new(b"std::ops::Add<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, Output = typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>>")
-                .next()
-                .unwrap()
-                .0,
+            Chunks::new(tokens![
+                op!(+),
+                token!(<),
+                    ty!(UInt), token!(<), ty!(UTerm), token!(,), ty!(B1), token!(>),
+                    token!(,),
+                    token!(Output), token!(=),
+                        ty!(UInt), token!(<), ty!(UTerm), token!(,), ty!(B1), token!(>),
+                token!(>),
+            ])
+            .next()
+            .unwrap()
+            .0,
             Parsed(Binary(ExprBinary {
                 op: "+".into(),
                 expr: Box::new(Value(Unsigned(UInt {
@@ -585,88 +645,95 @@ mod tests {
             }
         }
         assert_eq!(
-            parse_binary_expr_and_get_op(b"std::ops::Add<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(+), token!(<), ty!(UTerm), token!(>)]),
             "+",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"std::ops::BitAnd<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(&), token!(<), ty!(UTerm), token!(>)]),
             "&",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"std::ops::BitOr<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(|), token!(<), ty!(UTerm), token!(>)]),
             "|",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"std::ops::BitXor<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(^), token!(<), ty!(UTerm), token!(>)]),
             "^",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"std::ops::Div<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(/), token!(<), ty!(UTerm), token!(>)]),
             "/",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"typenum::type_operators::IsEqual<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(==), token!(<), ty!(UTerm), token!(>)]),
             "==",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(
-                b"typenum::type_operators::IsGreaterOrEqual<typenum::uint::UTerm>"
-            ),
+            parse_binary_expr_and_get_op(tokens![op!(>=), token!(<), ty!(UTerm), token!(>)]),
             ">=",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(
-                b"typenum::type_operators::IsGreater<typenum::uint::UTerm>"
-            ),
+            parse_binary_expr_and_get_op(tokens![op!(>), token!(<), ty!(UTerm), token!(>)]),
             ">",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(
-                b"typenum::type_operators::IsLessOrEqual<typenum::uint::UTerm>"
-            ),
+            parse_binary_expr_and_get_op(tokens![op!(<=), token!(<), ty!(UTerm), token!(>)]),
             "<=",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"typenum::type_operators::IsLess<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(<), token!(<), ty!(UTerm), token!(>)]),
             "<",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"std::ops::Mul<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(*), token!(<), ty!(UTerm), token!(>)]),
             "*",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"std::ops::Rem<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(%), token!(<), ty!(UTerm), token!(>)]),
             "%",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(
-                b"typenum::type_operators::IsNotEqual<typenum::uint::UTerm>"
-            ),
+            parse_binary_expr_and_get_op(tokens![op!(!=), token!(<), ty!(UTerm), token!(>)]),
             "!=",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"std::ops::Shl<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(<<), token!(<), ty!(UTerm), token!(>)]),
             "<<",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"std::ops::Shr<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(>>), token!(<), ty!(UTerm), token!(>)]),
             ">>",
         );
         assert_eq!(
-            parse_binary_expr_and_get_op(b"std::ops::Sub<typenum::uint::UTerm>"),
+            parse_binary_expr_and_get_op(tokens![op!(-), token!(<), ty!(UTerm), token!(>)]),
             "-",
         );
     }
 
     #[test]
     fn chunks_iter_yields_path_when_necessary() {
+        #[rustfmt::skip]
         assert_eq!(
-            Chunks::new(
-                b"std::ops::Add<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, Output = mod::Type<typenum::uint::UTerm, AssociatedType = typenum::bit::B1>>"
-            )
-                .next()
-                .unwrap()
-                .0,
+            Chunks::new(tokens![
+                op!(+),
+                token!(<),
+                    ty!(UInt),
+                    token!(<),
+                        ty!(UTerm), token!(,), ty!(B1),
+                    token!(>),
+                    token!(,),
+                    token!(Output), token!(=),
+                        b"mod", token!(::), b"Type",
+                        token!(<),
+                            ty!(UTerm),
+                            token!(,),
+                            b"AssociatedType", token!(=), ty!(B1),
+                        token!(>),
+                token!(>),
+            ])
+            .next()
+            .unwrap()
+            .0,
             Parsed(Binary(ExprBinary {
                 op: "+".into(),
                 expr: Box::new(Value(Unsigned(UInt {
@@ -679,7 +746,10 @@ mod tests {
                     PathComponent::Ident("Type".into()),
                     PathComponent::Args(vec![
                         GenericArg::Expr(Value(Unsigned(UTerm))),
-                        GenericArg::AssociatedType(PathComponent::Ident("AssociatedType".into()), Value(Bit(B1))),
+                        GenericArg::AssociatedType(
+                            PathComponent::Ident("AssociatedType".into()),
+                            Value(Bit(B1))
+                        ),
                     ])
                 ]))))),
             }))
@@ -688,10 +758,17 @@ mod tests {
 
     #[test]
     fn chunks_iter_yields_application_expr_when_next_in_stream() {
+        #[rustfmt::skip]
         assert_eq!(
-            Chunks::new(
-                b"<Self as std::ops::Add<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>>>"
-            )
+            Chunks::new(tokens![
+                token!(<),
+                    b"Self as ",
+                    op!(+),
+                    token!(<),
+                        ty!(UInt), token!(<), ty!(UTerm), token!(,), ty!(B1), token!(>),
+                    token!(>),
+                token!(>),
+            ])
             .next()
             .unwrap()
             .0,
@@ -713,10 +790,19 @@ mod tests {
 
     #[test]
     fn chunks_iter_yields_application_expr_when_next_in_stream_with_output() {
+        #[rustfmt::skip]
         assert_eq!(
-            Chunks::new(
-                b"<Self as std::ops::Add<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>>>::Output"
-            )
+            Chunks::new(tokens![
+                token!(<),
+                    b"Self as ",
+                    op!(+),
+                    token!(<),
+                        ty!(UInt), token!(<), ty!(UTerm), token!(,), ty!(B1), token!(>),
+                    token!(>),
+                token!(>),
+                token!(::),
+                token!(Output),
+            ])
             .next()
             .unwrap()
             .0,
