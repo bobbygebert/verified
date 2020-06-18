@@ -139,273 +139,175 @@ parser! {
     }
 }
 
-fn parse_bit<'b, Input>() -> impl Parser<Input, Output = ValueBit> + 'b
-where
-    <Input as StreamOnce>::Error: ParseError<
-        <Input as StreamOnce>::Token,
-        <Input as StreamOnce>::Range,
-        <Input as StreamOnce>::Position,
-    >,
-    Input: Stream + 'b,
-    Input: Stream<Token = u8, Range = &'b [u8]>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    choice((
-        attempt(fancy_ty(ty!(B0)).map(|_| ValueBit::B0)),
-        fancy_ty(ty!(B1)).map(|_| ValueBit::B1),
-    ))
-}
-
 parser! {
     fn bit['b, Input]()(Input) -> ValueBit
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        parse_bit()
+        choice((
+            attempt(fancy_ty(ty!(B0)).map(|_| ValueBit::B0)),
+            fancy_ty(ty!(B1)).map(|_| ValueBit::B1),
+        ))
     }
-}
-
-fn parse_unsigned<'b, Input>() -> impl Parser<Input, Output = ValueUnsigned> + 'b
-where
-    <Input as StreamOnce>::Error: ParseError<
-        <Input as StreamOnce>::Token,
-        <Input as StreamOnce>::Range,
-        <Input as StreamOnce>::Position,
-    >,
-    Input: Stream + 'b,
-    Input: Stream<Token = u8, Range = &'b [u8]>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    let uterm = || fancy_ty(ty!(UTerm)).map(|_| ValueUnsigned::UTerm);
-    let uint = || fancy_ty(ty!(UInt));
-    let generics = || {
-        between(
-            fancy(bytes(token!(<))),
-            fancy(bytes(token!(>))),
-            (
-                unsigned(),
-                (fancy(spaces()), fancy(bytes(token!(,))), fancy(spaces())),
-                attempt(bit()),
-            ),
-        )
-    };
-    choice((
-        attempt(uterm()),
-        (uint(), generics()).map(|(_ty, (msb, _comma, lsb))| ValueUnsigned::UInt {
-            msb: Box::new(msb),
-            lsb,
-        }),
-    ))
 }
 
 parser! {
     fn unsigned['b, Input]()(Input) -> ValueUnsigned
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        parse_unsigned()
+        let uterm = || fancy_ty(ty!(UTerm)).map(|_| ValueUnsigned::UTerm);
+        let uint = || fancy_ty(ty!(UInt));
+        let generics = || {
+            between(
+                fancy(bytes(token!(<))),
+                fancy(bytes(token!(>))),
+                (
+                    unsigned(),
+                    (fancy(spaces()), fancy(bytes(token!(,))), fancy(spaces())),
+                    attempt(bit()),
+                ),
+            )
+        };
+        choice((
+            attempt(uterm()),
+            (uint(), generics()).map(|(_ty, (msb, _comma, lsb))| ValueUnsigned::UInt {
+                msb: Box::new(msb),
+                lsb,
+            }),
+        ))
     }
-}
-
-fn parse_type_path<'b, Input>() -> impl Parser<Input, Output = ValuePath> + 'b
-where
-    <Input as StreamOnce>::Error: ParseError<
-        <Input as StreamOnce>::Token,
-        <Input as StreamOnce>::Range,
-        <Input as StreamOnce>::Position,
-    >,
-    Input: Stream + 'b,
-    Input: Stream<Token = u8, Range = &'b [u8]>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    let segment =
-        || fancy(many1(choice((alpha_num(), byte(token!(_)[0]))))).map(PathComponent::Ident);
-    let colon2 = || bytes(token!(::)).map(|_| PathComponent::Colon);
-    let args = || {
-        between(
-            fancy(bytes(token!(<))),
-            fancy(bytes(token!(>))),
-            sep_by(
-                choice((
-                    attempt(
-                        (segment(), spaces(), bytes(token!(=)), spaces(), expr())
-                            .map(|(l, _, _, _, r)| GenericArg::AssociatedType(l, r)),
-                    ),
-                    expr().map(GenericArg::Expr),
-                )),
-                (spaces(), bytes(token!(,)), spaces()),
-            ),
-        )
-        .map(PathComponent::Args)
-    };
-    many1(choice((attempt(segment()), attempt(colon2()), args()))).map(ValuePath)
 }
 
 parser! {
     fn type_path['b, Input]()(Input) -> ValuePath
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        parse_type_path()
+        let segment =
+            || fancy(many1(choice((alpha_num(), byte(token!(_)[0]))))).map(PathComponent::Ident);
+        let colon2 = || bytes(token!(::)).map(|_| PathComponent::Colon);
+        let args = || {
+            between(
+                fancy(bytes(token!(<))),
+                fancy(bytes(token!(>))),
+                sep_by(
+                    choice((
+                        attempt(
+                            (segment(), spaces(), bytes(token!(=)), spaces(), expr())
+                                .map(|(l, _, _, _, r)| GenericArg::AssociatedType(l, r)),
+                        ),
+                        expr().map(GenericArg::Expr),
+                    )),
+                    (spaces(), bytes(token!(,)), spaces()),
+                ),
+            )
+            .map(PathComponent::Args)
+        };
+        many1(choice((attempt(segment()), attempt(colon2()), args()))).map(ValuePath)
     }
-}
-
-fn parse_value<'b, Input>() -> impl Parser<Input, Output = ExprValue> + 'b
-where
-    <Input as StreamOnce>::Error: ParseError<
-        <Input as StreamOnce>::Token,
-        <Input as StreamOnce>::Range,
-        <Input as StreamOnce>::Position,
-    >,
-    Input: Stream + 'b,
-    Input: Stream<Token = u8, Range = &'b [u8]>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    choice((
-        attempt(unsigned().map(ExprValue::Unsigned)),
-        attempt(bit().map(ExprValue::Bit)),
-        type_path().map(ExprValue::Path),
-    ))
 }
 
 parser! {
     fn value['b, Input]()(Input) -> ExprValue
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        parse_value()
-    }
-}
-
-fn parse_unary<'b, Input>() -> impl Parser<Input, Output = ExprUnary> + 'b
-where
-    <Input as StreamOnce>::Error: ParseError<
-        <Input as StreamOnce>::Token,
-        <Input as StreamOnce>::Range,
-        <Input as StreamOnce>::Position,
-    >,
-    Input: Stream + 'b,
-    Input: Stream<Token = u8, Range = &'b [u8]>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    let not = || bytes(op!(!));
-    let generics = || {
-        optional(between(
-            fancy(bytes(token!(<))),
-            fancy(bytes(token!(>))),
-            (
-                bytes(token!(Output)),
-                spaces(),
-                bytes(token!(=)),
-                spaces(),
-                expr(),
-            ),
+        choice((
+            attempt(unsigned().map(ExprValue::Unsigned)),
+            attempt(bit().map(ExprValue::Bit)),
+            type_path().map(ExprValue::Path),
         ))
-    };
-    (not(), generics()).map(|(_op, generics)| ExprUnary::Not {
-        result: generics.map(|(_, _, _, _, result)| Box::new(result)),
-    })
+    }
 }
 
 parser! {
     fn unary['b, Input]()(Input) -> ExprUnary
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        parse_unary()
-    }
-}
-
-fn parse_binary<'b, Input>() -> impl Parser<Input, Output = ExprBinary> + 'b
-where
-    <Input as StreamOnce>::Error: ParseError<
-        <Input as StreamOnce>::Token,
-        <Input as StreamOnce>::Range,
-        <Input as StreamOnce>::Position,
-    >,
-    Input: Stream + 'b,
-    Input: Stream<Token = u8, Range = &'b [u8]>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    let op = || {
-        choice((
-            attempt(bytes(op!(+)).map(|_| "+".into())),
-            attempt(bytes(op!(&)).map(|_| "&".into())),
-            attempt(bytes(op!(|)).map(|_| "|".into())),
-            attempt(bytes(op!(^)).map(|_| "^".into())),
-            attempt(bytes(op!(/)).map(|_| "/".into())),
-            attempt(bytes(op!(==)).map(|_| "==".into())),
-            attempt(bytes(op!(>=)).map(|_| ">=".into())),
-            attempt(bytes(op!(>)).map(|_| ">".into())),
-            attempt(bytes(op!(<=)).map(|_| "<=".into())),
-            attempt(bytes(op!(<)).map(|_| "<".into())),
-            attempt(bytes(op!(*)).map(|_| "*".into())),
-            attempt(bytes(op!(%)).map(|_| "%".into())),
-            attempt(bytes(op!(!=)).map(|_| "!=".into())),
-            attempt(bytes(op!(<<)).map(|_| "<<".into())),
-            attempt(bytes(op!(>>)).map(|_| ">>".into())),
-            attempt(bytes(op!(-)).map(|_| "-".into())),
-        ))
-    };
-
-    let generics = || {
-        between(
-            fancy(bytes(token!(<))),
-            fancy(bytes(token!(>))),
-            (
-                expr(),
-                optional((
-                    fancy(bytes(token!(,))),
-                    fancy(spaces()),
-                    fancy(bytes(token!(Output))),
-                    fancy(spaces()),
-                    fancy(bytes(token!(=))),
-                    fancy(spaces()),
+        let not = || bytes(op!(!));
+        let generics = || {
+            optional(between(
+                fancy(bytes(token!(<))),
+                fancy(bytes(token!(>))),
+                (
+                    bytes(token!(Output)),
+                    spaces(),
+                    bytes(token!(=)),
+                    spaces(),
                     expr(),
-                )),
-            ),
-        )
-    };
-    (op(), generics()).map(|(op, (expr, result))| ExprBinary {
-        op,
-        expr: Box::new(expr),
-        result: result.map(|(_, _, _, _, _, _, expr)| Box::new(expr)),
-    })
+                ),
+            ))
+        };
+        (not(), generics()).map(|(_op, generics)| ExprUnary::Not {
+            result: generics.map(|(_, _, _, _, result)| Box::new(result)),
+        })
+    }
 }
 
 parser! {
     fn binary['b, Input]()(Input) -> ExprBinary
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        parse_binary()
-    }
-}
+        let op = || {
+            choice((
+                attempt(bytes(op!(+)).map(|_| "+".into())),
+                attempt(bytes(op!(&)).map(|_| "&".into())),
+                attempt(bytes(op!(|)).map(|_| "|".into())),
+                attempt(bytes(op!(^)).map(|_| "^".into())),
+                attempt(bytes(op!(/)).map(|_| "/".into())),
+                attempt(bytes(op!(==)).map(|_| "==".into())),
+                attempt(bytes(op!(>=)).map(|_| ">=".into())),
+                attempt(bytes(op!(>)).map(|_| ">".into())),
+                attempt(bytes(op!(<=)).map(|_| "<=".into())),
+                attempt(bytes(op!(<)).map(|_| "<".into())),
+                attempt(bytes(op!(*)).map(|_| "*".into())),
+                attempt(bytes(op!(%)).map(|_| "%".into())),
+                attempt(bytes(op!(!=)).map(|_| "!=".into())),
+                attempt(bytes(op!(<<)).map(|_| "<<".into())),
+                attempt(bytes(op!(>>)).map(|_| ">>".into())),
+                attempt(bytes(op!(-)).map(|_| "-".into())),
+            ))
+        };
 
-fn parse_application<'b, Input>() -> impl Parser<Input, Output = ExprApplication> + 'b
-where
-    <Input as StreamOnce>::Error: ParseError<
-        <Input as StreamOnce>::Token,
-        <Input as StreamOnce>::Range,
-        <Input as StreamOnce>::Position,
-    >,
-    Input: Stream + 'b,
-    Input: Stream<Token = u8, Range = &'b [u8]>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    (
-        between(
-            fancy(bytes(token!(<))),
-            fancy(bytes(token!(>))),
-            (expr(), bytes(b" as "), expr()),
-        ),
-        optional((fancy(bytes(token!(::))), fancy(bytes(token!(Output))))),
-    )
-        .map(|((lhs, _, application), _)| ExprApplication {
-            lhs: Box::new(lhs),
-            application: Box::new(application),
+        let generics = || {
+            between(
+                fancy(bytes(token!(<))),
+                fancy(bytes(token!(>))),
+                (
+                    expr(),
+                    optional((
+                        fancy(bytes(token!(,))),
+                        fancy(spaces()),
+                        fancy(bytes(token!(Output))),
+                        fancy(spaces()),
+                        fancy(bytes(token!(=))),
+                        fancy(spaces()),
+                        expr(),
+                    )),
+                ),
+            )
+        };
+        (op(), generics()).map(|(op, (expr, result))| ExprBinary {
+            op,
+            expr: Box::new(expr),
+            result: result.map(|(_, _, _, _, _, _, expr)| Box::new(expr)),
         })
+    }
 }
 
 parser! {
     fn application['b, Input]()(Input) -> ExprApplication
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        parse_application()
+        (
+            between(
+                fancy(bytes(token!(<))),
+                fancy(bytes(token!(>))),
+                (expr(), bytes(b" as "), expr()),
+            ),
+            optional((fancy(bytes(token!(::))), fancy(bytes(token!(Output))))),
+        )
+            .map(|((lhs, _, application), _)| ExprApplication {
+                lhs: Box::new(lhs),
+                application: Box::new(application),
+            })
     }
 }
 
@@ -436,21 +338,15 @@ parser! {
     }
 }
 
-pub fn chunk<'b, Input>() -> impl Parser<Input, Output = Chunk> + 'b
-where
-    <Input as StreamOnce>::Error: ParseError<
-        <Input as StreamOnce>::Token,
-        <Input as StreamOnce>::Range,
-        <Input as StreamOnce>::Position,
-    >,
-    Input: Stream + 'b,
-    Input: Stream<Token = u8, Range = &'b [u8]>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    choice((
-        attempt(expr().map(Chunk::Parsed)),
-        any().map(Chunk::Unparsed),
-    ))
+parser! {
+    fn chunk['b, Input]()(Input) -> Chunk
+    where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
+    {
+        choice((
+            attempt(expr().map(Chunk::Parsed)),
+            any().map(Chunk::Unparsed),
+        ))
+    }
 }
 
 pub struct Chunks;
