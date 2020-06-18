@@ -5,8 +5,8 @@ use combine::parser::repeat::iterate;
 use combine::stream::position;
 use combine::stream::{Stream, StreamOnce};
 use combine::{
-    any, attempt, between, choice, many, many1, optional, parser, satisfy, sep_by, EasyParser,
-    Parser,
+    any, attempt, between, choice, many, many1, optional, parser, satisfy, sep_by, seq_parser_expr,
+    seq_parser_impl, seq_parser_pattern, struct_parser, EasyParser, Parser,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -42,7 +42,7 @@ pub enum ValueUnsigned {
 #[derive(Debug, Eq, PartialEq)]
 pub enum GenericArg {
     Expr(Expr),
-    AssociatedType(PathComponent, Expr),
+    AssociatedType { name: PathComponent, ty: Expr },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -62,9 +62,9 @@ pub enum ExprValue {
     Path(ValuePath),
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum ExprUnary {
-    Not { result: Option<Box<Expr>> },
+#[derive(Debug, Default, Eq, PartialEq)]
+pub struct ExprNot {
+    pub result: Option<Box<Expr>>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -83,7 +83,7 @@ pub struct ExprApplication {
 #[derive(Debug, Eq, PartialEq)]
 pub enum Expr {
     Value(Fancy<ExprValue>),
-    Unary(Fancy<ExprUnary>),
+    Unary(Fancy<ExprNot>),
     Binary(Fancy<ExprBinary>),
     Application(Fancy<ExprApplication>),
 }
@@ -92,6 +92,30 @@ pub enum Expr {
 pub enum Chunk {
     Parsed(Expr),
     Unparsed(u8),
+}
+
+fn control<'b, Input>() -> impl Parser<Input, Output = Vec<u8>> + 'b
+where
+    <Input as StreamOnce>::Error: ParseError<
+        <Input as StreamOnce>::Token,
+        <Input as StreamOnce>::Range,
+        <Input as StreamOnce>::Position,
+    >,
+    Input: Stream + 'b,
+    Input: Stream<Token = u8, Range = &'b [u8]>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    let mut prev = '.';
+    many(satisfy(move |t: u8| {
+        let t = t as char;
+        let res = (t.is_ascii_control() && !t.is_ascii_whitespace())
+            || t == '['
+            || (t == 'm' && (prev == '[' || prev.is_ascii_digit()))
+            || t == ';'
+            || t.is_ascii_digit();
+        prev = t;
+        res
+    }))
 }
 
 fn fancy<'b, Input, Item>(
@@ -107,21 +131,7 @@ where
     Input: Stream<Token = u8, Range = &'b [u8]>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let mut prev = '.';
-    (
-        many(satisfy(move |t: u8| {
-            let t = t as char;
-            let res = (t.is_ascii_control() && !t.is_ascii_whitespace())
-                || t == '['
-                || (t == 'm' && (prev == '[' || prev.is_ascii_digit()))
-                || t == ';'
-                || t.is_ascii_digit();
-            prev = t;
-            res
-        })),
-        uncolored,
-    )
-        .map(|(code, item)| Fancy { code, item })
+    (control(), uncolored).map(|(code, item)| Fancy { code, item })
 }
 
 parser! {
@@ -154,25 +164,22 @@ parser! {
     fn unsigned['b, Input]()(Input) -> ValueUnsigned
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        let uterm = || fancy_ty(ty!(UTerm)).map(|_| ValueUnsigned::UTerm);
-        let uint = || fancy_ty(ty!(UInt));
-        let generics = || {
-            between(
-                fancy(bytes(token!(<))),
-                fancy(bytes(token!(>))),
-                (
-                    unsigned(),
-                    (fancy(spaces()), fancy(bytes(token!(,))), fancy(spaces())),
-                    attempt(bit()),
-                ),
-            )
-        };
+        use ValueUnsigned::UInt;
         choice((
-            attempt(uterm()),
-            (uint(), generics()).map(|(_ty, (msb, _comma, lsb))| ValueUnsigned::UInt {
-                msb: Box::new(msb),
-                lsb,
-            }),
+            attempt(fancy_ty(
+                ty!(UTerm)).map(|_| ValueUnsigned::UTerm),
+            ),
+            fancy_ty(
+                ty!(UInt),
+            ).with(between(fancy(bytes(token!(<))), fancy(bytes(token!(>))),
+                struct_parser! {
+                    UInt {
+                        msb: unsigned().map(Box::new),
+                        _: (fancy(spaces()), fancy(bytes(token!(,))), fancy(spaces())),
+                        lsb: attempt(bit()),
+                    }
+                }
+            )),
         ))
     }
 }
@@ -181,6 +188,7 @@ parser! {
     fn type_path['b, Input]()(Input) -> ValuePath
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
+        use GenericArg::AssociatedType;
         let segment =
             || fancy(many1(choice((alpha_num(), byte(token!(_)[0]))))).map(PathComponent::Ident);
         let colon2 = || bytes(token!(::)).map(|_| PathComponent::Colon);
@@ -189,15 +197,17 @@ parser! {
                 fancy(bytes(token!(<))),
                 fancy(bytes(token!(>))),
                 sep_by(
-                    choice((
-                        attempt(
-                            (segment(), spaces(), bytes(token!(=)), spaces(), expr())
-                                .map(|(l, _, _, _, r)| GenericArg::AssociatedType(l, r)),
-                        ),
-                        expr().map(GenericArg::Expr),
-                    )),
+                    attempt(
+                        struct_parser! {
+                            AssociatedType {
+                                name: segment(),
+                                _: (spaces(), bytes(token!(=)), spaces()),
+                                ty: expr(),
+                            }
+                        }
+                    ).or(expr().map(GenericArg::Expr)),
                     (spaces(), bytes(token!(,)), spaces()),
-                ),
+                )
             )
             .map(PathComponent::Args)
         };
@@ -218,26 +228,27 @@ parser! {
 }
 
 parser! {
-    fn unary['b, Input]()(Input) -> ExprUnary
+    fn unary['b, Input]()(Input) -> ExprNot
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        let not = || bytes(op!(!));
-        let generics = || {
-            optional(between(
-                fancy(bytes(token!(<))),
-                fancy(bytes(token!(>))),
-                (
-                    bytes(token!(Output)),
-                    spaces(),
-                    bytes(token!(=)),
-                    spaces(),
-                    expr(),
-                ),
-            ))
-        };
-        (not(), generics()).map(|(_op, generics)| ExprUnary::Not {
-            result: generics.map(|(_, _, _, _, result)| Box::new(result)),
-        })
+        struct_parser! {
+            ExprNot {
+                _: bytes(op!(!)),
+                result: optional(between(
+                    fancy(bytes(token!(<))),
+                    fancy(bytes(token!(>))),
+                    (bytes(token!(Output)), spaces(), bytes(token!(=)), spaces()).with(
+                        expr().map(Box::new)
+                    ),
+                ))
+            }
+        }
+    }
+}
+
+macro_rules! op_parser {
+    ($($op:tt),*) => {
+        choice(($(attempt(bytes(op!($op))).map(|_| stringify!($op).into()),)*))
     }
 }
 
@@ -245,50 +256,30 @@ parser! {
     fn binary['b, Input]()(Input) -> ExprBinary
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        let op = || {
-            choice((
-                attempt(bytes(op!(+)).map(|_| "+".into())),
-                attempt(bytes(op!(&)).map(|_| "&".into())),
-                attempt(bytes(op!(|)).map(|_| "|".into())),
-                attempt(bytes(op!(^)).map(|_| "^".into())),
-                attempt(bytes(op!(/)).map(|_| "/".into())),
-                attempt(bytes(op!(==)).map(|_| "==".into())),
-                attempt(bytes(op!(>=)).map(|_| ">=".into())),
-                attempt(bytes(op!(>)).map(|_| ">".into())),
-                attempt(bytes(op!(<=)).map(|_| "<=".into())),
-                attempt(bytes(op!(<)).map(|_| "<".into())),
-                attempt(bytes(op!(*)).map(|_| "*".into())),
-                attempt(bytes(op!(%)).map(|_| "%".into())),
-                attempt(bytes(op!(!=)).map(|_| "!=".into())),
-                attempt(bytes(op!(<<)).map(|_| "<<".into())),
-                attempt(bytes(op!(>>)).map(|_| ">>".into())),
-                attempt(bytes(op!(-)).map(|_| "-".into())),
-            ))
-        };
-
-        let generics = || {
+        struct Args {
+            expr: Box<Expr>,
+            result: Option<Box<Expr>>,
+        }
+        (
+            op_parser![+, &, |, ^, /, ==, >=, >, <=, <, *, %, !=, <<, >>, -],
             between(
                 fancy(bytes(token!(<))),
                 fancy(bytes(token!(>))),
-                (
-                    expr(),
-                    optional((
-                        fancy(bytes(token!(,))),
-                        fancy(spaces()),
-                        fancy(bytes(token!(Output))),
-                        fancy(spaces()),
-                        fancy(bytes(token!(=))),
-                        fancy(spaces()),
-                        expr(),
-                    )),
-                ),
-            )
-        };
-        (op(), generics()).map(|(op, (expr, result))| ExprBinary {
-            op,
-            expr: Box::new(expr),
-            result: result.map(|(_, _, _, _, _, _, expr)| Box::new(expr)),
-        })
+                struct_parser! {
+                    Args {
+                        expr: expr().map(Box::new),
+                        result: optional((
+                            fancy(bytes(token!(,))),
+                            fancy(spaces()),
+                            fancy(bytes(token!(Output))),
+                            fancy(spaces()),
+                            fancy(bytes(token!(=))),
+                            fancy(spaces())
+                        ).with(expr().map(Box::new))),
+                    }
+                }
+            ),
+        ).map(|(op, Args { expr, result })| ExprBinary { op, expr, result })
     }
 }
 
@@ -296,18 +287,19 @@ parser! {
     fn application['b, Input]()(Input) -> ExprApplication
     where [Input: Stream<Token = u8, Range = &'b [u8]> + 'b]
     {
-        (
-            between(
-                fancy(bytes(token!(<))),
-                fancy(bytes(token!(>))),
-                (expr(), bytes(b" as "), expr()),
-            ),
-            optional((fancy(bytes(token!(::))), fancy(bytes(token!(Output))))),
+        between(
+            fancy(bytes(token!(<))),
+            fancy(bytes(token!(>))),
+            struct_parser! {
+                ExprApplication {
+                    lhs: expr().map(Box::new),
+                    _: bytes(b" as "),
+                    application: expr().map(Box::new),
+                }
+            }
+        ).skip(
+            optional((fancy(bytes(token!(::))), fancy(bytes(token!(Output)))))
         )
-            .map(|((lhs, _, application), _)| ExprApplication {
-                lhs: Box::new(lhs),
-                application: Box::new(application),
-            })
     }
 }
 
@@ -372,7 +364,6 @@ mod tests {
     use super::*;
     use Chunk::*;
     use Expr::*;
-    use ExprUnary::*;
     use ExprValue::*;
     use ValueBit::*;
     use ValueUnsigned::*;
@@ -521,7 +512,7 @@ mod tests {
     fn chunks_iter_yields_unary_expr_when_next_in_stream() {
         assert_eq!(
             Chunks::new(op!(!)).next().unwrap().0,
-            Parsed(Unary(Not { result: None }.into()))
+            Parsed(Unary(ExprNot { result: None }.into()))
         );
     }
 
@@ -540,7 +531,7 @@ mod tests {
             .unwrap()
             .0,
             Parsed(Unary(
-                Not {
+                ExprNot {
                     result: Some(Box::new(Value(Bit(B1).into()))),
                 }
                 .into()
@@ -722,10 +713,10 @@ mod tests {
                     PathComponent::Ident(Into::<Vec<u8>>::into("Type").into()),
                     PathComponent::Args(vec![
                         GenericArg::Expr(Value(Unsigned(UTerm).into())),
-                        GenericArg::AssociatedType(
-                            PathComponent::Ident(Into::<Vec<u8>>::into("AssociatedType").into()),
-                            Value(Bit(B1).into())
-                        ),
+                        GenericArg::AssociatedType{
+                            name: PathComponent::Ident(Into::<Vec<u8>>::into("AssociatedType").into()),
+                            ty: Value(Bit(B1).into())
+                        },
                     ])
                 ])).into()))),
             }.into()))

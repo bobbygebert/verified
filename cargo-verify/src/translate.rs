@@ -1,5 +1,5 @@
 use crate::parse::{
-    Chunk, ChunkIter, Chunks, Expr, ExprApplication, ExprBinary, ExprUnary, ExprValue, Fancy,
+    Chunk, ChunkIter, Chunks, Expr, ExprApplication, ExprBinary, ExprNot, ExprValue, Fancy,
     GenericArg, PathComponent, ValueBit, ValuePath, ValueUnsigned,
 };
 
@@ -90,10 +90,10 @@ impl From<GenericArg> for Vec<u8> {
     fn from(arg: GenericArg) -> Self {
         match arg {
             GenericArg::Expr(expr) => expr.into(),
-            GenericArg::AssociatedType(name, expr) => {
+            GenericArg::AssociatedType { name, ty } => {
                 let mut v: Vec<_> = name.into();
                 v.extend(b" = ");
-                v.extend(Into::<Vec<u8>>::into(expr));
+                v.extend(Into::<Vec<u8>>::into(ty));
                 v
             }
         }
@@ -166,11 +166,11 @@ impl From<ExprApplication> for Vec<u8> {
             }) => tokens![code, "{ ", *lhs, " ", op, " ", *expr, " }"],
             Expr::Unary(Fancy {
                 code,
-                item: ExprUnary::Not { result: None },
+                item: ExprNot { result: None },
             }) => tokens![code, "!", *lhs],
             Expr::Unary(Fancy {
                 code,
-                item: ExprUnary::Not {
+                item: ExprNot {
                     result: Some(result),
                 },
             }) => tokens![code, "{ ", "!", *lhs, " == ", *result, " }"],
