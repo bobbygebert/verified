@@ -31,6 +31,12 @@ impl<Output: std::io::Write> Translator<Output> {
     }
 }
 
+macro_rules! tokens {
+    ($h:expr, $($t:expr),*) => {
+        $h.into_iter()$(.chain(Into::<Vec<u8>>::into($t)))*.collect()
+    }
+}
+
 impl<Item: Into<Vec<u8>>> From<Fancy<Item>> for Vec<u8> {
     fn from(Fancy { code, item }: Fancy<Item>) -> Self {
         code.into_iter().chain(item.into()).collect()
@@ -98,20 +104,19 @@ impl From<PathComponent> for Vec<u8> {
     fn from(component: PathComponent) -> Self {
         let mut comma = vec![];
         match component {
-            PathComponent::Args(args) => vec!['<' as u8]
-                .into_iter()
-                .chain(
-                    args.into_iter()
-                        .map(Into::<Vec<u8>>::into)
-                        .map(|arg| {
-                            let delimitted = comma.clone().into_iter().chain(arg.into_iter());
-                            comma = ", ".into();
-                            delimitted
-                        })
-                        .flatten(),
-                )
-                .chain(vec!['>' as u8])
-                .collect::<Vec<_>>(),
+            PathComponent::Args(args) => tokens![
+                "<".bytes(),
+                args.into_iter()
+                    .map(Into::<Vec<u8>>::into)
+                    .map(|arg| {
+                        let delimitted = comma.clone().into_iter().chain(arg.into_iter());
+                        comma = ", ".into();
+                        delimitted
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>(),
+                ">"
+            ],
             PathComponent::Ident(item) => item.into(),
             PathComponent::Colon => "::".into(),
         }
@@ -149,18 +154,7 @@ impl From<ExprApplication> for Vec<u8> {
                         expr,
                         result: Some(result),
                     },
-            }) => code
-                .into_iter()
-                .chain(Into::<Self>::into("{ "))
-                .chain(Into::<Self>::into(*lhs))
-                .chain(Into::<Self>::into(" "))
-                .chain(op)
-                .chain(Into::<Self>::into(" "))
-                .chain(Into::<Self>::into(*expr))
-                .chain(Into::<Self>::into(" == "))
-                .chain(Into::<Self>::into(*result))
-                .chain(Into::<Self>::into(" }"))
-                .collect(),
+            }) => tokens![code, "{ ", *lhs, " ", op, " ", *expr, " == ", *result, " }"],
             Expr::Binary(Fancy {
                 code,
                 item:
@@ -169,99 +163,50 @@ impl From<ExprApplication> for Vec<u8> {
                         expr,
                         result: None,
                     },
-            }) => code
-                .into_iter()
-                .chain(Into::<Self>::into("{ "))
-                .chain(Into::<Self>::into(*lhs))
-                .chain(Into::<Self>::into(" "))
-                .chain(op)
-                .chain(Into::<Self>::into(" "))
-                .chain(Into::<Self>::into(*expr))
-                .chain(Into::<Self>::into(" }"))
-                .collect(),
+            }) => tokens![code, "{ ", *lhs, " ", op, " ", *expr, " }"],
             Expr::Unary(Fancy {
                 code,
                 item: ExprUnary::Not { result: None },
-            }) => code
-                .into_iter()
-                .chain(Into::<Self>::into("!"))
-                .chain(Into::<Self>::into(*lhs))
-                .collect(),
+            }) => tokens![code, "!", *lhs],
             Expr::Unary(Fancy {
                 code,
                 item: ExprUnary::Not {
                     result: Some(result),
                 },
-            }) => code
-                .into_iter()
-                .chain(Into::<Self>::into("{ "))
-                .chain(Into::<Self>::into("!"))
-                .chain(Into::<Self>::into(*lhs))
-                .chain(Into::<Self>::into(" == "))
-                .chain(Into::<Self>::into(*result))
-                .chain(Into::<Self>::into(" }"))
-                .collect(),
+            }) => tokens![code, "{ ", "!", *lhs, " == ", *result, " }"],
             Expr::Value(expr) => expr.into(),
             Expr::Application(expr) => expr.into(),
         }
     }
 }
 
+macro_rules! fancy_expr {
+    ($ty:ident { $code:ident, $item:ident }) => {
+        Fancy {
+            $code,
+            $item: ExprApplication {
+                lhs: Box::new(Expr::Value(Fancy {
+                    $code: "".into(),
+                    $item: ExprValue::Path(ValuePath(vec![PathComponent::Ident(Fancy {
+                        $code: "".into(),
+                        $item: "_".into(),
+                    })])),
+                })),
+                application: Box::new(Expr::$ty(Fancy {
+                    $item,
+                    $code: "".into(),
+                })),
+            },
+        }
+    };
+}
 impl From<Expr> for Vec<u8> {
     fn from(expr: Expr) -> Self {
         match expr {
             Expr::Application(expr) => expr.into(),
-            Expr::Unary(Fancy { code, item }) => Fancy {
-                code,
-                item: ExprApplication {
-                    lhs: Box::new(Expr::Value(Fancy {
-                        code: "".into(),
-                        item: ExprValue::Path(ValuePath(vec![PathComponent::Ident(Fancy {
-                            code: "".into(),
-                            item: "_".into(),
-                        })])),
-                    })),
-                    application: Box::new(Expr::Unary(Fancy {
-                        item,
-                        code: "".into(),
-                    })),
-                },
-            }
-            .into(),
-            Expr::Binary(Fancy { code, item }) => Fancy {
-                code,
-                item: ExprApplication {
-                    lhs: Box::new(Expr::Value(Fancy {
-                        code: "".into(),
-                        item: ExprValue::Path(ValuePath(vec![PathComponent::Ident(Fancy {
-                            code: "".into(),
-                            item: "_".into(),
-                        })])),
-                    })),
-                    application: Box::new(Expr::Binary(Fancy {
-                        item,
-                        code: "".into(),
-                    })),
-                },
-            }
-            .into(),
-            Expr::Value(Fancy { code, item }) => Fancy {
-                code,
-                item: ExprApplication {
-                    lhs: Box::new(Expr::Value(Fancy {
-                        code: "".into(),
-                        item: ExprValue::Path(ValuePath(vec![PathComponent::Ident(Fancy {
-                            code: "".into(),
-                            item: "_".into(),
-                        })])),
-                    })),
-                    application: Box::new(Expr::Value(Fancy {
-                        item,
-                        code: "".into(),
-                    })),
-                },
-            }
-            .into(),
+            Expr::Unary(Fancy { code, item }) => fancy_expr! { Unary { code, item } }.into(),
+            Expr::Binary(Fancy { code, item }) => fancy_expr! { Binary { code, item } }.into(),
+            Expr::Value(Fancy { code, item }) => fancy_expr! { Value { code, item } }.into(),
         }
     }
 }
